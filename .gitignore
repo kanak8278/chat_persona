@@ -1,2 +1,7 @@
-./.*
-./*.csv
+*csv
+.*
+*.zip
+FoCus/
+FoCus_modified/
+checkpoints/
+Research Papers/

@@ -12,8 +12,11 @@ import ast
 val = "/content/drive/MyDrive/UMBC/data/focus_val_data.csv" #location to data file
 
 
-# Load the T5 tokenizer
-tokenizer = T5Tokenizer.from_pretrained("t5-base", model_max_length=512)
+# Load the T5 tokenizer and model
+tokenizer = T5Tokenizer.from_pretrained("t5-base")
+model = T5ForConditionalGeneration.from_pretrained("t5-base")
+
+model.resize_token_embeddings(len(tokenizer))
 
 # Define the dataset and dataloader for training
 class DialogDataset(Dataset):
@@ -45,11 +48,13 @@ class DialogDataset(Dataset):
                                               max_length=self.max_source_length,
                                               padding = 'max_length',
                                               add_special_tokens=True,
+                                              truncation=True,
                                               return_tensors="pt")
         answer_encoding = self.tokenizer.encode_plus(answer, 
                                                      max_length=self.max_target_length,
                                                      padding = 'max_length',
                                                      add_special_tokens=True,
+                                                     truncation=True,
                                                      return_tensors="pt")
         
         input_ids = encoding["input_ids"].squeeze()
@@ -61,7 +66,6 @@ class DialogDataset(Dataset):
         return input_ids, attention_mask, target_ids
 
 # Define the optimizer and scheduler
-model = T5ForConditionalGeneration.from_pretrained("t5-base")
 optimizer = Adam(model.parameters(), lr=5e-5)
 scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
 

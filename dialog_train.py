@@ -187,9 +187,9 @@ if __name__ == "__main__":
     # model.resize_token_embeddings(len(tokenizer))
 
     # Load the training data and split it into tt5_ground_knw_ground_personaraining and validation sets
-    train = "/content/drive/MyDrive/UMBC/data/focus_val_data.csv" #location to data file
-    val = "/content/drive/MyDrive/UMBC/data/focus_val_data.csv" #location to data file
-    test = "/content/drive/MyDrive/UMBC/data/focus_val_data.csv"
+    train = "/work/kanakr/chat_persona/data/focus_val_data.csv" #location to data file
+    val = "/work/kanakr/chat_persona/data/focus_val_data.csv" #location to data file
+    test = "/work/kanakr/chat_persona/data/data/focus_val_data.csv"
     
     train_df = pd.read_csv(train)
     val_df = pd.read_csv(val)

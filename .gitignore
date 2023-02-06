@@ -8,4 +8,5 @@ Research Papers/
 t5_grd_knw_grd_persona/
 data/
 *.txt
-wandb/
+**/wandb/
+generator/t5_grd_knw_grd_persona/

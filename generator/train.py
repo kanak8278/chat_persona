@@ -1,13 +1,14 @@
-from utils import DialogDataset, train
 import torch
 import pandas as pd
 from torch.utils.data import DataLoader
 from transformers import T5Tokenizer, T5ForConditionalGeneration
-from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
+import wandb
 
+from utils import DialogDataset, train
 
+wandb.init(project="t5_training_ground_knowledge")
 
 args = {
     # Initialize config
@@ -22,6 +23,8 @@ args = {
     "MODEL_SAVE_DIR" : "t5_grd_knw_grd_persona/"
 
 }
+
+wandb.config.update(args)
     
 train_params = {
         'batch_size': args["TRAIN_BATCH_SIZE"],
@@ -70,4 +73,6 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(params =  model.parameters(), lr=args["LEARNING_RATE"])
     scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
     
+    wandb.watch(model, log="all")
+
     train(model, train_dataloader, val_dataloader, optimizer, scheduler, args["TRAIN_EPOCHS"], args["MODEL_SAVE_DIR"])

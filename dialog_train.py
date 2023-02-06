@@ -10,6 +10,7 @@ import os
 import ast
 import gc
 import time
+import wandb
 
 # Define the dataset and dataloader for training
 class DialogDataset(Dataset):
@@ -43,7 +44,7 @@ class DialogDataset(Dataset):
                                               add_special_tokens=True,
                                               truncation=True,
                                               return_tensors="pt")
-        answer_encoding = self.tokenizer.eTruencode_plus(answer, 
+        answer_encoding = self.tokenizer.encode_plus(answer, 
                                                      max_length=self.max_target_length,
                                                      padding = 'max_length',
                                                      add_special_tokens=True,
@@ -53,13 +54,10 @@ class DialogDataset(Dataset):
         input_ids = encoding["input_ids"].squeeze()
         attention_mask = encoding["attention_mask"].squeeze()
         labels = answer_encoding["input_ids"]
-        # labels[labels == tokenizer.pad_token_id] = -100
         target_ids = labels.squeeze()
-        # print(input_ids.shape, attention_mask.shape, labels.shape)
         return input_ids, attention_mask, target_ids
 
 
-# Define the training loop
 # Define the training loop
 def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs, model_dir, save_best=True):
     best_loss = float("inf")
@@ -123,7 +121,8 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
 
 
 
-def validate(tokenizer, model, device, loader):
+def validate(tokenizer, model, loader):
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     s_time = time.time()
     model.eval()
     model.to(device)
@@ -161,8 +160,8 @@ if __name__ == "__main__":
     # WandB – Config is a variable that holds and saves hyperparameters and inputs
     # Defining some key variables that will be used later on in the training  
     config = wandb.config          # Initialize config
-    config.TRAIN_BATCH_SIZE = 2    # input batch size for training (default: 64)
-    config.VALID_BATCH_SIZE = 2    # input batch size for testing (default: 1000)
+    config.TRAIN_BATCH_SIZE = 8    # input batch size for training (default: 64)
+    config.VALID_BATCH_SIZE = 16    # input batch size for testing (default: 1000)
     config.TRAIN_EPOCHS = 2        # number of epochs to train (default: 10)
     config.VAL_EPOCHS = 1 
     config.LEARNING_RATE = 5e-5    # learning rate (default: 0.01)
@@ -187,11 +186,11 @@ if __name__ == "__main__":
     # model.resize_token_embeddings(len(tokenizer))
 
     # Load the training data and split it into tt5_ground_knw_ground_personaraining and validation sets
-    train = "/work/kanakr/chat_persona/data/focus_val_data.csv" #location to data file
+    train_loc = "/work/kanakr/chat_persona/data/focus_val_data.csv" #location to data file
     val = "/work/kanakr/chat_persona/data/focus_val_data.csv" #location to data file
-    test = "/work/kanakr/chat_persona/data/data/focus_val_data.csv"
+    test = "/work/kanakr/chat_persona/data/focus_val_data.csv"
     
-    train_df = pd.read_csv(train)
+    train_df = pd.read_csv(train_loc)
     val_df = pd.read_csv(val)
     
     print("TRAIN Dataset: {}".format(train_df.shape))
@@ -211,32 +210,29 @@ if __name__ == "__main__":
         }
     
     # Create the dataloaders
-    train_dataloader = DataLoader(DialogDataset(train_df, config.MAX_LEN, config.ANSWER_LEN), **train_params)
-    val_dataloader = DataLoader(DialogDataset(val_df, config.MAX_LEN, config.ANSWER_LEN), **val_params)
+    train_dataloader = DataLoader(DialogDataset(tokenizer, train_df, config.MAX_LEN, config.ANSWER_LEN), **train_params)
+    val_dataloader = DataLoader(DialogDataset(tokenizer, val_df, config.MAX_LEN, config.ANSWER_LEN), **val_params)
     
+    print(len(train_dataloader), len(val_dataloader))
     # Define the optimizer and scheduler
     optimizer = torch.optim.Adam(params =  model.parameters(), lr=config.LEARNING_RATE)
     
     scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
     
     # Log metrics with wandb
-    wandb.watch(model, log="all")
+    # wandb.watch(model, log="all")
     
     # Training loop
     print('Initiating Fine-Tuning for the model on our dataset')
-    train(model, train_dataloader, val_dataloader, optimizer, scheduler, config.TRAIN_EPOCHS, config.MODEL_SAVE_DIR)
-
-    
-    gc.collect()
-    with torch.no_grad():
-        torch.cuda.empty_cache()
+    # train(model, train_dataloader, val_dataloader, optimizer, scheduler, config.TRAIN_EPOCHS, config.MODEL_SAVE_DIR)
     
     inference_model = T5ForConditionalGeneration.from_pretrained(config.MODEL_SAVE_DIR)
     test_df = pd.read_csv(test)
     print("TEST Dataset: {}".format(test_df.shape))
 
-    test_dataloader = DataLoader(DialogDataset(test_df, config.MAX_LEN, config.ANSWER_LEN), **val_params)
-    predictions, actuals = validate(tokenizer, inference_model, device, test_dataloader)
-    final_df = pd.DataFrame({'Generated Text':predictions,'Actual Text':actuals})
-    final_df.to_csv(f'{config.MODEL_SAVE_DIR}/predictions.csv')
+    test_dataloader = DataLoader(DialogDataset(tokenizer, test_df, config.MAX_LEN, config.ANSWER_LEN), **val_params)
+    print(len(test_dataloader))
+    # predictions, actuals = validate(tokenizer, inference_model, test_dataloader)
+    # final_df = pd.DataFrame({'Generated Text':predictions,'Actual Text':actuals})
+    # final_df.to_csv(f'{config.MODEL_SAVE_DIR}/predictions.csv')
     print('Output Files generated for review')

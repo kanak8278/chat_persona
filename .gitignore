@@ -5,3 +5,7 @@ FoCus/
 FoCus_modified/
 checkpoints/
 Research Papers/
+t5_grd_knw_grd_persona/
+data/
+*.txt
+wandb/

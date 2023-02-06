@@ -85,8 +85,11 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
           total_loss += loss.item()
           loss.backward()
           optimizer.step()
+          scheduler.step(loss.item())
+          
           if i % 100 == 0:
             print(f"Epoch: {epoch+1}, Batch: {i}, Time Elapsed: {time.time()-s_time :.2f}")
+                    
           
         avg_loss = total_loss / len(train_dataloader)
         print("Epoch: {}/{}, Loss: {:.4f}, Time Elapsed:{:.2f}".format(epoch+1, epochs, avg_loss, time.time()-s_time))
@@ -117,7 +120,6 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
           model.save_pretrained(model_dir)
         #   torch.save(model.state_dict(), "t5_best_model.pt")
         
-        scheduler.step(avg_val_loss)
 
 
 
@@ -160,9 +162,9 @@ if __name__ == "__main__":
     # WandB – Config is a variable that holds and saves hyperparameters and inputs
     # Defining some key variables that will be used later on in the training  
     config = wandb.config          # Initialize config
-    config.TRAIN_BATCH_SIZE = 8    # input batch size for training (default: 64)
-    config.VALID_BATCH_SIZE = 16    # input batch size for testing (default: 1000)
-    config.TRAIN_EPOCHS = 2        # number of epochs to train (default: 10)
+    config.TRAIN_BATCH_SIZE = 4    # input batch size for training (default: 64)
+    config.VALID_BATCH_SIZE = 8    # input batch size for testing (default: 1000)
+    config.TRAIN_EPOCHS = 4        # number of epochs to train (default: 10)
     config.VAL_EPOCHS = 1 
     config.LEARNING_RATE = 5e-5    # learning rate (default: 0.01)
     config.SEED = 42               # random seed (default: 42)
@@ -186,9 +188,9 @@ if __name__ == "__main__":
     # model.resize_token_embeddings(len(tokenizer))
 
     # Load the training data and split it into tt5_ground_knw_ground_personaraining and validation sets
-    train_loc = "/work/kanakr/chat_persona/data/focus_val_data.csv" #location to data file
-    val = "/work/kanakr/chat_persona/data/focus_val_data.csv" #location to data file
-    test = "/work/kanakr/chat_persona/data/focus_val_data.csv"
+    train_loc = "./data/focus_train_data.csv" #location to data file
+    val = "./data/focus_val_data.csv" #location to data file
+    test = "./data/focus_test_data.csv"
     
     train_df = pd.read_csv(train_loc)
     val_df = pd.read_csv(val)
@@ -216,15 +218,14 @@ if __name__ == "__main__":
     print(len(train_dataloader), len(val_dataloader))
     # Define the optimizer and scheduler
     optimizer = torch.optim.Adam(params =  model.parameters(), lr=config.LEARNING_RATE)
-    
     scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
     
     # Log metrics with wandb
-    # wandb.watch(model, log="all")
+    wandb.watch(model, log="all")
     
     # Training loop
     print('Initiating Fine-Tuning for the model on our dataset')
-    # train(model, train_dataloader, val_dataloader, optimizer, scheduler, config.TRAIN_EPOCHS, config.MODEL_SAVE_DIR)
+    train(model, train_dataloader, val_dataloader, optimizer, scheduler, config.TRAIN_EPOCHS, config.MODEL_SAVE_DIR)
     
     inference_model = T5ForConditionalGeneration.from_pretrained(config.MODEL_SAVE_DIR)
     test_df = pd.read_csv(test)
@@ -232,7 +233,7 @@ if __name__ == "__main__":
 
     test_dataloader = DataLoader(DialogDataset(tokenizer, test_df, config.MAX_LEN, config.ANSWER_LEN), **val_params)
     print(len(test_dataloader))
-    # predictions, actuals = validate(tokenizer, inference_model, test_dataloader)
-    # final_df = pd.DataFrame({'Generated Text':predictions,'Actual Text':actuals})
-    # final_df.to_csv(f'{config.MODEL_SAVE_DIR}/predictions.csv')
+    predictions, actuals = validate(tokenizer, inference_model, test_dataloader)
+    final_df = pd.DataFrame({'Generated Text':predictions,'Actual Text':actuals})
+    final_df.to_csv(f'{config.MODEL_SAVE_DIR}/predictions.csv')
     print('Output Files generated for review')

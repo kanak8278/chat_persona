@@ -6,15 +6,15 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
 import wandb
 
-from utils import DialogDataset, train
+from utils import DialogDataset, train, validate
 
 wandb.init(project="t5_training_ground_knowledge")
 
 args = {
     # Initialize config
-    "TRAIN_BATCH_SIZE" : 6,    # input batch size for training (default: 64)
-    "VALID_BATCH_SIZE" : 8,    # input batch size for testing (default: 1000)
-    "TRAIN_EPOCHS" : 10,        # number of epochs to train (default: 10)
+    "TRAIN_BATCH_SIZE" : 16,    # input batch size for training (default: 64)
+    "VALID_BATCH_SIZE" : 16,    # input batch size for testing (default: 1000)
+    "TRAIN_EPOCHS" : 40,        # number of epochs to train (default: 10)
     "VAL_EPOCHS" : 1, 
     "LEARNING_RATE" : 5e-5,    # learning rate (default: 0.01)
     "SEED" : 42,               # random seed (default: 42)
@@ -74,5 +74,15 @@ if __name__ == "__main__":
     scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
     
     wandb.watch(model, log="all")
-
+    print("Starting Training!")
     train(model, train_dataloader, val_dataloader, optimizer, scheduler, args["TRAIN_EPOCHS"], args["MODEL_SAVE_DIR"])
+    print()
+    print("Loading inference model")
+    inference_model = T5ForConditionalGeneration.from_pretrained(config.MODEL_SAVE_DIR)
+    print("Inference Model Ready")
+
+    predictions, actuals = validate(tokenizer, inference_model, test_dataloader)
+    print("Predictions Ready!")
+    final_df = pd.DataFrame({'Generated Text':predictions,'Actual Text':actuals})
+    final_df.to_csv(f'{config.MODEL_SAVE_DIR}/t5_predictions.csv', index=False)
+    print('Output Files generated for review')

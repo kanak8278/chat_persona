@@ -28,15 +28,15 @@ class DialogDataset(Dataset):
         row = self.df.iloc[item]
         query = str(row["query"])
         persona = str(" ".join(ast.literal_eval(row['ground_persona'])))
-        context = str(row["ground_knowledge"])
-        answer = str(row["answer"])
-        
+        context = str(row['ground_knowledge'])
+        answer = f"{row['answer']} </s>"
         
         if self.dialog_history:
-          dialog_history = str(row["dialog_history"])
-          text = dialog_history + "</s>" + query + "</s>" +  persona + "</s>" + context
+            dialog_history = str(row["dialog_history"])
+            text = f"answer_me: {query} history: {dialog_history} context: {context} persona: {persona} </s>"
         else:
-          text = query + "</s>" + persona + "</s>" + context
+            text = f"answer_me: {query} context: {context} persona: {persona} </s>"
+
 
         encoding = self.tokenizer.encode_plus(text, 
                                               max_length=self.max_source_length,
@@ -235,5 +235,5 @@ if __name__ == "__main__":
     print(len(test_dataloader))
     predictions, actuals = validate(tokenizer, inference_model, test_dataloader)
     final_df = pd.DataFrame({'Generated Text':predictions,'Actual Text':actuals})
-    final_df.to_csv(f'{config.MODEL_SAVE_DIR}/predictions.csv')
+    final_df.to_csv(f'{config.MODEL_SAVE_DIR}/predictions.csv', index=False)
     print('Output Files generated for review')

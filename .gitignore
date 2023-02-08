@@ -10,3 +10,6 @@ data/
 *.txt
 **/wandb/
 generator/t5_grd_knw_grd_persona/
+**/*.err
+**/*.out
+**/*.sh

@@ -20,14 +20,13 @@ class DialogDataset(Dataset):
         query = str(row["query"])
         persona = str(" ".join(ast.literal_eval(row['ground_persona'])))
         context = str(row["ground_knowledge"])
-        answer = str(row["answer"])
-        
+        answer = f"{row['answer']}"
         
         if self.dialog_history:
-          dialog_history = str(row["dialog_history"])
-          text = dialog_history + "</s>" + query + "</s>" +  persona + "</s>" + context
+            dialog_history = str(row["dialog_history"])
+            text = f"answer_me: {query} history: {dialog_history} context: {context} persona: {persona}"
         else:
-          text = query + "</s>" + persona + "</s>" + context
+            text = f"answer_me: {query} context: {context} persona: {persona}"
 
         encoding = self.tokenizer.encode_plus(text, 
                                               max_length=self.max_source_length,
@@ -98,8 +97,6 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
                     model.save_pretrained(model_dir)
                     print(f"Model Saved: {model_dir}")
                     print()
-            if i+1 >=400:
-                break      
           
         avg_loss = total_loss / len(train_dataloader)
         print(f"Epoch: {epoch+1}/{epochs} completed!")
@@ -112,9 +109,6 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
                 output = forward_pass(data, model, device)
                 val_loss += output['loss'].item()
                 
-                #for trial run
-                if i+1 >= 200:
-                    break
 
         avg_val_loss = val_loss / len(val_dataloader)
         print(f"Validation Loss: {avg_val_loss :.4f}, Time Elapsed:{(time.time()-s_time)/60 :.2f}")
@@ -153,10 +147,10 @@ def validate(tokenizer, model, loader):
     predictions = []
     actuals = []
     with torch.no_grad():
-          for i, (input_ids, attention_mask, target_ids) in enumerate(loader):
-            y = target_ids.to(device, dtype = torch.long)
-            ids = input_ids.to(device, dtype = torch.long)
-            mask = attention_mask.to(device, dtype = torch.long)
+          for i, data in enumerate(loader):
+            y = data["target_ids"].to(device, dtype = torch.long)
+            ids = data["input_ids"].to(device, dtype = torch.long)
+            mask = data["attention_mask"].to(device, dtype = torch.long)
 
             generated_ids = model.generate(
                 input_ids = ids,

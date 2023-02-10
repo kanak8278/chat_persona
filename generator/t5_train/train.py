@@ -8,7 +8,7 @@ import wandb
 
 from utils import DialogDataset, train, validate
 
-wandb.init(project="t5_training_ground_knowledge")
+# wandb.init(project="t5_training_ground_knowledge")
 
 args = {
     # Initialize config
@@ -24,7 +24,7 @@ args = {
 
 }
 
-wandb.config.update(args)
+# wandb.config.update(args)
     
 train_params = {
         'batch_size': args["TRAIN_BATCH_SIZE"],
@@ -50,9 +50,9 @@ if __name__ == "__main__":
     model = T5ForConditionalGeneration.from_pretrained("t5-base")
     print(f"Model Vocab Size: {model.config.vocab_size}, Tokenizer Vocab Size: {tokenizer.vocab_size}")
     
-    train_loc = "../data/focus_train_data.csv" #location to data file
-    val = "../data/focus_val_data.csv" #location to data file
-    test = "../data/focus_test_data.csv"
+    train_loc = "../../data/focus_train_data.csv" #location to data file
+    val = "../../data/focus_val_data.csv" #location to data file
+    test = "../../data/focus_test_data.csv"
     
     train_df = pd.read_csv(train_loc)
     val_df = pd.read_csv(val)
@@ -70,17 +70,17 @@ if __name__ == "__main__":
     print("Train Mini-Batch: ", len(train_dataloader), "Val Mini-Batch: ", len(val_dataloader), "Test Mini-Batch: ", len(test_dataloader))
     
     # Define the optimizer and scheduler
-    optimizer = torch.optim.Adam(params =  model.parameters(), lr=args["LEARNING_RATE"])
-    scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
+    optimizer = torch.optim.AdamW(params =  model.parameters(), lr=args["LEARNING_RATE"])
+    # scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=0.01, last_epoch=-1)
     
-    wandb.watch(model, log="all")
+    # wandb.watch(model, log="all")
     print("Starting Training!")
-    train(model, train_dataloader, val_dataloader, optimizer, scheduler, args["TRAIN_EPOCHS"], args["MODEL_SAVE_DIR"])
+    train(model, train_dataloader, val_dataloader, optimizer, scheduler, args["TRAIN_EPOCHS"], args["MODEL_SAVE_DIR"], save_best=False)
     print()
     print("Loading inference model")
     inference_model = T5ForConditionalGeneration.from_pretrained(config.MODEL_SAVE_DIR)
     print("Inference Model Ready")
-
     predictions, actuals = validate(tokenizer, inference_model, test_dataloader)
     print("Predictions Ready!")
     final_df = pd.DataFrame({'Generated Text':predictions,'Actual Text':actuals})

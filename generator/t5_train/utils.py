@@ -61,6 +61,7 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
     
     s_time = time.time()
     for epoch in range(epochs):
+        print(f"Epoch: {epoch+1} started")
         total_loss = 0
         model.train()
         
@@ -73,12 +74,12 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
             total_loss += loss.item()
             loss.backward()
             optimizer.step()
-            
+            if i%50 == 0:
+                print(f"i: {i}")
             # Validate after every 200 mini batches
-            if i+1 % 200 == 0:
+            if i % 200 == 0:
                 print(f"Epoch: {epoch+1}, Batch: {i+1},  Time Elapsed: {(time.time()-s_time)/60 :.2f}")
-                print(f'Current Loss: {loss.item(), :.4f}, AvgLoss: {total_loss/(i+1) :.4f}')
-                
+                print(f'Current Loss: {loss.item()}, AvgLoss: {total_loss/(i+1) :.4f}')
                 val_loss = 0
                 with torch.no_grad():
                     model.eval()
@@ -90,7 +91,7 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
                 avg_val_loss = val_loss / (idx+1)
                 print(f"Validation Loss: {avg_val_loss :.4f}, Time Elapsed:{(time.time()-s_time)/60 :.2f}")
                 scheduler.step(avg_val_loss)
-                
+                print(f"Learning Rate: get_lr {optimizer.param_groups[0]['lr']}")
                 if avg_val_loss < best_loss and save_best:
                     print(f"Avg Loss improved:{avg_val_loss} from {best_loss}")
                     best_loss = avg_val_loss
@@ -113,11 +114,14 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
         avg_val_loss = val_loss / len(val_dataloader)
         print(f"Validation Loss: {avg_val_loss :.4f}, Time Elapsed:{(time.time()-s_time)/60 :.2f}")
         scheduler.step(avg_val_loss)
+        print(f"Learning Rate: get_lr {optimizer.param_groups[0]['lr']}")
+        
 
         if avg_val_loss < best_loss and save_best:
-          best_loss = avg_val_loss
-          model.save_pretrained(model_dir)
-        print("********************************************************\n")
+            best_loss = avg_val_loss
+            model.save_pretrained(model_dir)
+            print(f"Model Saved: {model_dir}")
+            print("********************************************************\n")
 
 
 def forward_pass(data, model, device, pad_token_id=0,):

@@ -18,8 +18,8 @@ args = {
     "VAL_EPOCHS" : 1, 
     "LEARNING_RATE" : 5e-5,    # learning rate (default: 0.01)
     "SEED" : 42,               # random seed (default: 42)
-    "MAX_LEN" : 512,
-    "ANSWER_LEN" : 250, 
+    "MAX_LEN" : 2048,
+    "ANSWER_LEN" : 512, 
     "MODEL_SAVE_DIR" : "t5_grd_knw_grd_persona/"
 
 }

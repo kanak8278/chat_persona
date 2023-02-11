@@ -1,9 +1,7 @@
 import torch
 import pandas as pd
 from pprint import pprint
-from generator.utils import DialogDataset
-from transformers import T5Tokenizer, T5ForConditionalGeneration
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import ast
 
 # import log
 
@@ -35,13 +33,16 @@ if __name__ == "__main__":
 
     
     
-    tokenizer = T5Tokenizer.from_pretrained("t5-base", model)
-    print(tokenizer)
+    # tokenizer = T5Tokenizer.from_pretrained("t5-base", model)
+    # print(tokenizer)
     df = pd.read_csv("/work/kanakr/chat_persona/data/focus_test_data.csv")
-
-    test_data = DialogDataset(tokenizer, df, max_source_length = 512, dialog_history=True)
+    print(df['query'].iloc[2])
     
-    decoded_text = tokenizer.decode(test_data[5]['input_ids'], skip_special_tokens=True, clean_up_tokenization_spaces=True)
-    print(len(decoded_text))
-    print(decoded_text)
+    # dialog_history = dialog = ' EOS '.join(ast.literal_eval(df['dialog_history'].iloc[2]))
+    # print(dialog_history)
+    # test_data = DialogDataset(tokenizer, df, max_source_length = 512, dialog_history=True)
+    
+    # decoded_text = tokenizer.decode(test_data[5]['input_ids'], skip_special_tokens=True, clean_up_tokenization_spaces=True)
+    # print(len(decoded_text))
+    # print(decoded_text)
     

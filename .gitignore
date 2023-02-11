@@ -14,5 +14,5 @@ generator/t5_grd_knw_grd_persona/
 **/*.out
 **/*.sh
 **/job*/
-**/weights*/
+**/weight*/
 **/__pycache__/

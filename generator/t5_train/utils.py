@@ -23,7 +23,7 @@ class DialogDataset(Dataset):
         answer = f"{row['answer']}"
         
         if self.dialog_history:
-            dialog_history = str(row["dialog_history"])
+            dialog_history = tr(" ".join(ast.literal_eval(row['dialog_history'])))
             text = f"answer_me: {query} history: {dialog_history} context: {context} persona: {persona}"
         else:
             text = f"answer_me: {query} context: {context} persona: {persona}"
@@ -142,7 +142,7 @@ def forward_pass(data, model, device, pad_token_id=0,):
     }
 
 
-def validate(tokenizer, model, loader):
+def validate(tokenizer, model, loader, max_length=512):
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     s_time = time.time()
     model.eval()
@@ -159,7 +159,7 @@ def validate(tokenizer, model, loader):
             generated_ids = model.generate(
                 input_ids = ids,
                 attention_mask = mask, 
-                max_length=250, 
+                max_length=max_length, 
                 num_beams=2,
                 repetition_penalty=2.5, 
                 length_penalty=1.0, 

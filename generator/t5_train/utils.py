@@ -2,10 +2,21 @@ import torch
 from torch.utils.data import Dataset
 import ast
 import time
+from itertools import chain
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+
+SPECIAL_TOKENS = ["<machine>", "<human>", "<persona>", "<knowledge>"]
+ATTR_TO_SPECIAL_TOKEN = {'additional_special_tokens': ['<machine>', '<human>', '<persona>', '<knowledge>']}
+SPECIAL_TOKENS_MAP = {
+    "machine": "<machine>",
+    "human": "<human>",
+    "persona": "<persona>",
+    "knowledge": "<knowledge>"
+}
 
 
 class DialogDataset(Dataset):
-    def __init__(self, tokeinzer, df, max_source_length = 512, max_target_length = 250, dialog_history = False):
+    def __init__(self, tokeinzer, df, max_source_length = 1024, max_target_length = 250, dialog_history = False):
         self.df = df
         self.tokenizer = tokeinzer
         self.dialog_history = dialog_history
@@ -18,22 +29,30 @@ class DialogDataset(Dataset):
     def __getitem__(self, item):
         row = self.df.iloc[item]
         query = str(row["query"])
-        persona = str(" ".join(ast.literal_eval(row['ground_persona'])))
-        context = str(row["ground_knowledge"])
-        answer = f"{row['answer']}"
+    
+        persona = [SPECIAL_TOKENS_MAP["persona"]] + ast.literal_eval(row['ground_persona'])
+        knowledge = [SPECIAL_TOKENS_MAP["knowledge"]] + [str(row["ground_knowledge"])]
+        answer = row['answer'] 
         
-        if self.dialog_history:
-            dialog_history = tr(" ".join(ast.literal_eval(row['dialog_history'])))
-            text = f"answer_me: {query} history: {dialog_history} context: {context} persona: {persona}"
+        if self.dialog_history:    
+            history = ast.literal_eval(row['dialog_history'])
+            history = [SPECIAL_TOKENS_MAP["human"] + s if i % 2 == 0 else
+                    SPECIAL_TOKENS_MAP["machine"] + s
+                    for i, s in enumerate(history)] + [SPECIAL_TOKENS_MAP["human"] + query]
+        
         else:
-            text = f"answer_me: {query} context: {context} persona: {persona}"
-
+            history =  [SPECIAL_TOKENS_MAP["human"] + query]
+        
+        text = persona + knowledge + history
+        text = " ".join(text)
+        
         encoding = self.tokenizer.encode_plus(text, 
                                               max_length=self.max_source_length,
                                               padding = 'max_length',
                                               add_special_tokens=True,
                                               truncation=True,
                                               return_tensors="pt")
+        
         answer_encoding = self.tokenizer.encode_plus(answer, 
                                                      max_length=self.max_target_length,
                                                      padding = 'max_length',
@@ -50,12 +69,11 @@ class DialogDataset(Dataset):
             "target_ids": target_ids,
         }
         
-        # return input_ids, attention_mask, target_ids
 
-
-def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs, model_dir, save_best=True):
+def train(model, dataloaders, optimizer, scheduler, epochs, model_dir, save_best=True):
+    train_dataloader, val_dataloader, test_dataloader = dataloaders['train'], dataloaders['val'], dataloaders['test']
     best_loss = float("inf")
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     
     model = model.to(device)
     
@@ -71,10 +89,14 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
 
             output = forward_pass(data, model, device)
             loss = output['loss']
+            if torch.cuda.device_count() > 1:
+                loss = loss.mean()
             total_loss += loss.item()
-            loss.backward()
+            
+            loss.backward()    
             optimizer.step()
-            if i%50 == 0:
+            
+            if i%200 == 0:
                 print(f"i: {i}")
             # Validate after every 200 mini batches
             if i % 200 == 0:
@@ -85,20 +107,26 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
                     model.eval()
                     for idx, data in enumerate(val_dataloader):
                         output = forward_pass(data, model, device)
-                        val_loss += output['loss'].item()
-                        if idx>=10:
+                        loss = output['loss']
+                        if torch.cuda.device_count() > 1:
+                            loss = loss.mean()
+                        val_loss += loss.item()
+                        if idx >= 20:
                             break
+
                 avg_val_loss = val_loss / (idx+1)
                 print(f"Validation Loss: {avg_val_loss :.4f}, Time Elapsed:{(time.time()-s_time)/60 :.2f}")
                 scheduler.step(avg_val_loss)
                 print(f"Learning Rate: get_lr {optimizer.param_groups[0]['lr']}")
+                print("Best Loss:", best_loss, "Avg Val Loss:", avg_val_loss)
                 if avg_val_loss < best_loss and save_best:
                     print(f"Avg Loss improved:{avg_val_loss} from {best_loss}")
                     best_loss = avg_val_loss
-                    model.save_pretrained(model_dir)
+                    model.module.save_pretrained(model_dir)
                     print(f"Model Saved: {model_dir}")
                     print()
-          
+            if i >= 800:
+                break
         avg_loss = total_loss / len(train_dataloader)
         print(f"Epoch: {epoch+1}/{epochs} completed!")
         print("Epoch: {}/{} , Loss: {:.4f}, Time Elapsed:{:.2f}".format(epoch+1, epochs, avg_loss, (time.time()-s_time)/60))
@@ -108,7 +136,10 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
             model.eval()
             for i, data in enumerate(val_dataloader):            
                 output = forward_pass(data, model, device)
-                val_loss += output['loss'].item()
+                loss = output['loss']
+                if torch.cuda.device_count() > 1:
+                    loss = loss.mean()
+                val_loss += loss.item()
                 
 
         avg_val_loss = val_loss / len(val_dataloader)
@@ -119,9 +150,17 @@ def train(model, train_dataloader, val_dataloader, optimizer, scheduler, epochs,
 
         if avg_val_loss < best_loss and save_best:
             best_loss = avg_val_loss
-            model.save_pretrained(model_dir)
+            model.module.save_pretrained(model_dir)
             print(f"Model Saved: {model_dir}")
             print("********************************************************\n")
+        if epoch % 5 == 0:
+            inference_model = T5ForConditionalGeneration.from_pretrained(config.MODEL_SAVE_DIR)
+            print("Inference Model Ready")
+            predictions, actuals = validate(tokenizer, inference_model, test_dataloader)
+            print("Predictions Ready!")
+            final_df = pd.DataFrame({'Generated Text':predictions,'Actual Text':actuals})
+            final_df.to_csv(f"{model_dir}/t5_predictions.csv", index=False)
+            print('Output Files generated for review')
 
 
 def forward_pass(data, model, device, pad_token_id=0,):
@@ -142,7 +181,7 @@ def forward_pass(data, model, device, pad_token_id=0,):
     }
 
 
-def validate(tokenizer, model, loader, max_length=512):
+def validate(tokenizer, model, loader, max_length=256):
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     s_time = time.time()
     model.eval()

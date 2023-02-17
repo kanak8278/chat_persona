@@ -1,3 +1,6 @@
+import ast
+import torch
+
 class DialogDataset(Dataset):
     def __init__(self, df, tokenizer, max_source_length = 512,
                  max_target_length = 128, dialog_history = False):
@@ -6,18 +9,18 @@ class DialogDataset(Dataset):
         self.dialog_history = dialog_history
         self.max_source_length = max_source_length
         self.max_target_length = max_target_length
-    
+
     def __len__(self):
         return len(self.df)
-    
+
     def __getitem__(self, item):
         row = self.df.iloc[item]
         query = str(row["query"])
         persona = str(" ".join(ast.literal_eval(row['ground_persona'])))
         context = str(row["ground_knowledge"])
         answer = str(row["answer"])
-        
-        
+
+
         if self.dialog_history:
           dialog_history = str(row["dialog_history"])
           text = dialog_history + " " + query + " " +  persona + " " + context
@@ -25,7 +28,7 @@ class DialogDataset(Dataset):
           text = query +  " " + persona + " " + context
 
         source_encoding = self.tokenizer(
-                                text, 
+                                text,
                                 max_length=self.max_source_length,
                                 padding = 'max_length',
                                 truncation=True,
@@ -33,17 +36,17 @@ class DialogDataset(Dataset):
                                 add_special_tokens=True,
                                 return_tensors="pt")
         target_encoding = self.tokenizer.encode_plus(
-                                answer, 
+                                answer,
                                 max_length=self.max_target_length,
                                 padding = 'max_length',
-                                return_attention_mask = True,        
+                                return_attention_mask = True,
                                 add_special_tokens=True,
                                 truncation=True,
                                 return_tensors="pt")
 
         input_ids = source_encoding["input_ids"].flatten()
         attention_mask = source_encoding["attention_mask"].flatten()
-        
+
         labels = target_encoding["input_ids"]
         labels[labels == 0] = -100
         target_ids = labels.flatten()
@@ -66,7 +69,7 @@ class DialogDataModule(pl.LightningDataModule):
         batch_size = 4,
         max_source_length = 512,
         max_target_length = 128,
-        dialog_history = False 
+        dialog_history = False
     ):
         super().__init__()
         self.bs = batch_size
@@ -76,7 +79,7 @@ class DialogDataModule(pl.LightningDataModule):
         self.dialog_history = dialog_history
         self.max_source_length = max_source_length
         self.max_target_length = max_target_length
-    
+
     def setup(self,):
         self.train_dataset = DialogDataset(
             self.train_df,
@@ -92,7 +95,7 @@ class DialogDataModule(pl.LightningDataModule):
             self.max_target_length,
             self.dialog_history
             )
-        
+
     def train_dataloader(self,):
         return DataLoader(
             self.train_dataset,
@@ -111,7 +114,7 @@ class DialogModel(pl.LightningModule):
     def __init__(self, MODEL_NAME):
         super().__init__()
         self.model = T5forConditionalGeneration.from_pretrained(MODEL_NAME, return_dict=True)
-    
+
     def forward(self, input_ids, attention_mask, labels=None):
         output = model(
             input_ids= input_ids,
@@ -143,5 +146,5 @@ checkpoint_callback = ModelCheckpoint(
     save_top_k = 1,
     verbose= True,
     monitor = "val_loss",
-    mode = "min"    
+    mode = "min"
 )

@@ -4,6 +4,8 @@ import numpy as np
 import ast
 from pprint import pprint
 from torchmetrics.functional.text.bert import bert_score
+from torchmetrics.functional import bleu_score
+from torchmetrics.functional.text.rouge import rouge_score
 
 def generate_utils(model, tokenizer, history, query, device):  
     history = str(" ||| ".join(ast.literal_eval(history)))
@@ -36,6 +38,7 @@ def generate(df):
     result['bert_score'] = {"f1": sum(score['f1'])/len(score['f1']), 
                             "recall": sum(score['recall'])/len(score['recall']),
                             "precision": sum(score['precision'])/len(score['precision'])}
+    
     df['question_rewritten'] = question_rewritten
     result['df'] = df
     return result
@@ -45,30 +48,38 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 tokenizer = AutoTokenizer.from_pretrained("castorini/t5-base-canard")
 model = AutoModelForSeq2SeqLM.from_pretrained("castorini/t5-base-canard")
 
-train_loc = "../data/focus_train_data.csv"
-val_loc = "../data/focus_val_data.csv"
-test_loc = "../data/focus_test_data.csv"
+# train_loc = "../data/focus_train_data.csv"
+# val_loc = "../data/focus_val_data.csv"
+# test_loc = "../data/focus_test_data.csv"
 
-train_df = pd.read_csv(train_loc)
-val_df = pd.read_csv(val_loc)
-test_df = pd.read_csv(test_loc)
+# train_df = pd.read_csv(train_loc)
+# val_df = pd.read_csv(val_loc)
+# test_df = pd.read_csv(test_loc)
 
 
 if __name__ == "__main__":
-    result = generate(test_df)
-    result['df'].to_csv("./test_question_rewritten_1.csv", index=False)
-    print("BERT Score: ", result['bert_score'])
+    # result = generate(train_df)
+    # result['df'].to_csv("./train_question_rewritten_1.csv", index=False)
+    # print("BERT Score: ", result['bert_score'])
 
 
 
 
 
-    # df = pd.read_csv("./test_question_rewritten.csv")
-    # score = bert_score(list(df['question_rewritten']), list(df['query']))
+    df = pd.read_csv("./test_question_rewritten_1.csv")
     
-    # print(sum(score['f1'])/len(score['f1']))
-    # print(sum(score['precision'])/len(score['precision']))
-    # print(sum(score['recall'])/len(score['recall']))
+    # bertscore = bert_score(list(df['question_rewritten']), list(df['query']))
+    # avg_bertscore = {metric: sum(bert_score[metric])/len(bertscore[metric]) for metric in bertscore.keys()}
+    # print("Avg BERT Score: ", avg_bertscore)
+    
+    bleuscore = bleu_score(list(df['question_rewritten']), list(df['query']))
+    print("BLEU Score: ", bleuscore)
+    
+    rougescore = rouge_score(list(df['question_rewritten']), list(df['query']))
+    print(rougescore)
+    # avg_rougescore = {metric: sum(rougescore[metric])/len(rougescore[metric]) for metric in rougescore.keys()}
+    # print("Avg ROUGE Score: ", avg_rougescore)
+    
     
     # for idx, row in df.iterrows():
         

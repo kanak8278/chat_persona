@@ -246,7 +246,7 @@ trainer = Trainer(
     # limit_train_batches = 0.3,
     # limit_val_batches = 0.3,
     auto_scale_batch_size="binsearch",
-    gpus=1, 
+    # gpus=1, 
     default_root_dir="./CodeT5/Checkpoints", 
     logger=wandb_logger, 
     callbacks=[early_stop_callback,
@@ -254,8 +254,27 @@ trainer = Trainer(
                latest_checkpoint_callback,
                best_checkpoint_callback]
     )
-print("Trainer Ready, Tuning Starts!")
-tuner = trainer.tune(model)
-print("Tuner Results: ", tuner)
-print("Training Starts!")
-trainer.fit(model)
+
+# print("Trainer Ready, Tuning Starts!")
+# tuner = trainer.tune(model)
+# print("Tuner Results: ", tuner)
+
+# new_batch_size = tuner.scale_batch_size(model,)
+# model.hparams.batch_size = new_batch_size
+# model.hparams.lr = tuner
+# lr_finder = trainer.tuner.lr_find(model)
+
+# print("Training Starts!")
+# trainer.fit(model)
+
+model.load_from_checkpoint("./CodeT5/ModelCheckpoint/t5model-nohistory.ckpt")
+
+model.eval()
+itr = iter(test_dataloader)
+batch = next(itr)
+input_ids = batch['input_ids']
+print(input_ids)
+outputs = model.model.generate(input_ids, max_length=128, min_length=8, top_p=0.9, do_sample=True)
+output = tokenizer.decode(outputs[0], skip_special_tokens=True, )
+print(output)
+print(type(model.model))

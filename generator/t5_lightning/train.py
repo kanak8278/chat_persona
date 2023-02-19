@@ -146,7 +146,7 @@ test_dataset = DialogDataset(df_test, tokenizer)
 
 
 class CodeT5(pl.LightningModule):
-    def __init__(self,  learning_rate=5e-5, batch_size = 16, num_train_epochs=200, warmup_steps=1000):
+    def __init__(self,  learning_rate=5e-5, batch_size = 8, num_train_epochs=200, warmup_steps=1000):
         super().__init__()
         self.model = T5ForConditionalGeneration.from_pretrained("t5-base")
         self.model.resize_token_embeddings(new_num_tokens=32103)

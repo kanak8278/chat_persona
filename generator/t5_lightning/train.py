@@ -57,9 +57,9 @@ add_special_tokens_(model, tokenizer)
 print(f"Model Vocab Size: {model.config.vocab_size}, Tokenizer Vocab Size: {tokenizer.vocab_size}")
 
 
-val = "../../data/focus_val_data.csv"
-train = "../../data/focus_train_data.csv"
-test = "../../data/focus_test_data.csv"
+val = "../../t5_canard/test_question_rewritten_1.csv"
+train = "../../t5_canard/val_question_rewritten_1.csv"
+test = "../../t5_canard/test_question_rewritten_1.csv"
 
 
 
@@ -86,7 +86,7 @@ class DialogDataset(Dataset):
 
     def __getitem__(self, item):
       row = self.df.iloc[item]
-      query = SPECIAL_TOKENS_MAP["query"] +" "+ str(row["query"])
+      query = SPECIAL_TOKENS_MAP["query"] +" "+ str(row["question_rewritten"])
       persona = SPECIAL_TOKENS_MAP["persona"] + " "+ str(row['ground_persona'])
       knowledge = SPECIAL_TOKENS_MAP["knowledge"] + " " + str(row["ground_knowledge"])
       answer = row['answer']
@@ -136,20 +136,22 @@ class DialogDataset(Dataset):
 
 
 train_dataset = DialogDataset(df_train, tokenizer)
-train_dataloader = DataLoader(train_dataset,  batch_size=4, num_workers=4)
+# train_dataloader = DataLoader(train_dataset,  batch_size=4, num_workers=4)
 
 valid_dataset = DialogDataset(df_val, tokenizer)
-valid_dataloader = DataLoader(valid_dataset,  batch_size=8, num_workers=4)
+# valid_dataloader = DataLoader(valid_dataset,  batch_size=8, num_workers=4)
 
 test_dataset = DialogDataset(df_test, tokenizer)
-test_dataloader = DataLoader(test_dataset,  batch_size=8, num_workers=4)
+# test_dataloader = DataLoader(test_dataset,  batch_size=8, num_workers=4)
 
 
 class CodeT5(pl.LightningModule):
-    def __init__(self,  lr=5e-5, batch_size = 4, num_train_epochs=15, warmup_steps=1000):
+    def __init__(self,  learning_rate=5e-5, batch_size = 16, num_train_epochs=200, warmup_steps=1000):
         super().__init__()
         self.model = T5ForConditionalGeneration.from_pretrained("t5-base")
         self.model.resize_token_embeddings(new_num_tokens=32103)
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
         self.save_hyperparameters()
 
     def forward(self, input_ids, attention_mask, labels=None):     
@@ -175,6 +177,7 @@ class CodeT5(pl.LightningModule):
         self.log("validation_loss", outputs.loss,
                 #  on_epoch=True
                  )
+        # self.log("hyperparams", self.hparams)
 
         return outputs.loss
 
@@ -185,9 +188,9 @@ class CodeT5(pl.LightningModule):
 
     def configure_optimizers(self):
         # create optimizer
-        optimizer = AdamW(self.parameters(), lr=self.hparams.lr)
+        optimizer = AdamW(self.parameters(), lr=self.learning_rate)
         # create learning rate scheduler
-        num_train_optimization_steps = self.hparams.num_train_epochs * len(train_dataloader)
+        num_train_optimization_steps = self.hparams.num_train_epochs * len(self.train_dataloader())
         lr_scheduler = {'scheduler': get_linear_schedule_with_warmup(optimizer,
                                                     num_warmup_steps=self.hparams.warmup_steps,
                                                     num_training_steps=num_train_optimization_steps),
@@ -198,18 +201,16 @@ class CodeT5(pl.LightningModule):
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
 
     def train_dataloader(self):
-        return train_dataloader
+        return  DataLoader(train_dataset, batch_size=self.batch_size, num_workers=4)
 
     def val_dataloader(self):
-        return valid_dataloader
-
+        return DataLoader(valid_dataset,  batch_size=self.batch_size, num_workers=4)
+    
     def test_dataloader(self):
-        return test_dataloader
+        return DataLoader(test_dataset,  batch_size=self.batch_size, num_workers=4)
 
 
 model = CodeT5()
-
-
 
 # for early stopping, see https://pytorch-lightning.readthedocs.io/en/1.0.0/early_stopping.html?highlight=early%20stopping
 early_stop_callback = EarlyStopping(
@@ -220,33 +221,38 @@ early_stop_callback = EarlyStopping(
     mode='min'
 )
 lr_monitor = LearningRateMonitor(logging_interval='step')
-wandb_logger = WandbLogger(name='codet5-finetune-personalized-answer-generation', project='CodeT5')
+wandb_logger = WandbLogger(log_model ="all", project='CodeT5')
 best_checkpoint_callback = ModelCheckpoint(
     save_top_k=1,
     auto_insert_metric_name= True,
     monitor="validation_loss",
     mode="min",
     dirpath="./CodeT5/ModelCheckpoint",
-    filename="t5model-nohistory-best",
+    filename="t5model-rewritten-best-{epoch:02d}-{validation_loss:.2f}",
 )
 
 latest_checkpoint_callback = ModelCheckpoint(
     save_top_k=1,
-    every_n_train_steps = 300,
+    every_n_train_steps = 500,
     auto_insert_metric_name= True,
     monitor="training_loss",
     mode="min",
     dirpath="./CodeT5/ModelCheckpoint",
-    filename="t5model-nohistory-latest",
+    filename="t5model-rewritten-latest-{epoch:02d}-{training_loss:.2f}",
 )
 
+device_count = torch.cuda.device_count()
+print(device_count)
 trainer = Trainer(
     # fast_dev_run=True,
-    auto_lr_find=True,
-    # limit_train_batches = 0.3,
-    # limit_val_batches = 0.3,
-    auto_scale_batch_size="binsearch",
-    gpus=1, 
+    # auto_scale_batch_size="binsearch",
+    # auto_lr_find=True,
+    limit_train_batches = 1,
+    limit_val_batches = 0.5,
+    precision=16,
+    val_check_interval=0.5, 
+    accelerator="gpu",
+    gpus=device_count, 
     default_root_dir="./CodeT5/Checkpoints", 
     logger=wandb_logger, 
     callbacks=[early_stop_callback,
@@ -254,6 +260,7 @@ trainer = Trainer(
                latest_checkpoint_callback,
                best_checkpoint_callback]
     )
+
 print("Trainer Ready, Tuning Starts!")
 tuner = trainer.tune(model)
 print("Tuner Results: ", tuner)

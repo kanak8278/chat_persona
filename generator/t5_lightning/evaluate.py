@@ -136,7 +136,7 @@ class DialogDataset(Dataset):
 
 
 train_dataset = DialogDataset(df_train, tokenizer)
-train_dataloader = DataLoader(train_dataset,  batch_size=4, num_workers=4)
+train_dataloader = DataLoader(train_dataset,  batch_size=8, num_workers=4)
 
 valid_dataset = DialogDataset(df_val, tokenizer)
 valid_dataloader = DataLoader(valid_dataset,  batch_size=8, num_workers=4)
@@ -246,7 +246,7 @@ trainer = Trainer(
     # limit_train_batches = 0.3,
     # limit_val_batches = 0.3,
     auto_scale_batch_size="binsearch",
-    # gpus=1, 
+    gpus=1, 
     default_root_dir="./CodeT5/Checkpoints", 
     logger=wandb_logger, 
     callbacks=[early_stop_callback,
@@ -267,14 +267,14 @@ trainer = Trainer(
 # print("Training Starts!")
 # trainer.fit(model)
 
-model.load_from_checkpoint("./CodeT5/ModelCheckpoint/t5model-nohistory.ckpt")
+model.load_from_checkpoint("./CodeT5/ModelCheckpoint/t5model-nohistory-best.ckpt")
 
 model.eval()
 itr = iter(test_dataloader)
 batch = next(itr)
 input_ids = batch['input_ids']
-print(input_ids)
+
 outputs = model.model.generate(input_ids, max_length=128, min_length=8, top_p=0.9, do_sample=True)
-output = tokenizer.decode(outputs[0], skip_special_tokens=True, )
+output = tokenizer.decode(outputs[0], skip_special_tokens=True,
+                          clean_up_tokenization_spaces=True)
 print(output)
-print(type(model.model))

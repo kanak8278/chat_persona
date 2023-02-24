@@ -16,3 +16,4 @@ generator/t5_grd_knw_grd_persona/
 **/job*/
 **/*weight*/
 **/__pycache__/
+**/*.ckpt/

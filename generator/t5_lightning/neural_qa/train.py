@@ -1,6 +1,5 @@
 from models import *
 import json
-from collections import namedtuple
 
    
 # declaringa a class
@@ -19,8 +18,6 @@ def dict2obj(dict1):
 if __name__ == '__main__':
     args = open('config.json').read()
     args = json.loads(args)
-    # print(args)
-    # args = namedtuple('args', args.keys())(*args.keys())
     args = dict2obj(args)
     print(args)
     early_stop_callback = EarlyStopping(monitor='val_loss', patience=5, strict=False, verbose=True, mode='min')
@@ -34,6 +31,6 @@ if __name__ == '__main__':
 
     trainer = pl.Trainer(**trainer_args)
     model = LitQGModel(args)
+    model.load_from_checkpoint(checkpoint_path = args.checkpoint_path, args = args)
     dm = SquadDataModule(args)
-
     trainer.fit(model, dm)

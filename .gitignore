@@ -1,15 +1,14 @@
 *csv
-.*
 *.zip
 FoCus/
 FoCus_modified/
 checkpoints/
 Research Papers/
-t5_grd_knw_grd_persona/
 data/
 *.txt
 **/wandb/
-generator/t5_grd_knw_grd_persona/
+**/t5_grd_knw_grd_persona/
+generator/t5_lightning/neural_qa/lightning_logs/
 **/*.err
 **/*.out
 **/*.sh

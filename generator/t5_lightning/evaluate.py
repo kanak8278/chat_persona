@@ -267,7 +267,7 @@ trainer = Trainer(
 # print("Training Starts!")
 # trainer.fit(model)
 
-model.load_from_checkpoint("./CodeT5/ModelCheckpoint/t5model-nohistory-best.ckpt")
+model.load_from_checkpoint("./CodeT5/ModelCheckpoint/t5model-rewritten-latest-epoch=199-training_loss=0.85.ckpt")
 
 model.eval()
 itr = iter(test_dataloader)

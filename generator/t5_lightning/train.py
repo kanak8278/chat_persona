@@ -183,7 +183,7 @@ class CodeT5(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         outputs = self.common_step(batch, batch_idx)     
-
+        
         return outputs.loss
 
     def configure_optimizers(self):
@@ -211,11 +211,12 @@ class CodeT5(pl.LightningModule):
 
 
 model = CodeT5()
-
+# model.load_from_checkpoint('./CodeT5/ModelCheckpoint/t5model-rewritten-best-epoch=06-validation_loss=2.86.ckpt')
 # for early stopping, see https://pytorch-lightning.readthedocs.io/en/1.0.0/early_stopping.html?highlight=early%20stopping
+
 early_stop_callback = EarlyStopping(
     monitor='validation_loss',
-    patience=8,
+    patience=5,
     strict=False,
     verbose=True,
     mode='min'
@@ -233,7 +234,7 @@ best_checkpoint_callback = ModelCheckpoint(
 
 latest_checkpoint_callback = ModelCheckpoint(
     save_top_k=1,
-    every_n_train_steps = 500,
+    every_n_train_steps = 100,
     auto_insert_metric_name= True,
     monitor="training_loss",
     mode="min",
@@ -248,9 +249,8 @@ trainer = Trainer(
     # auto_scale_batch_size="binsearch",
     # auto_lr_find=True,
     limit_train_batches = 1,
-    limit_val_batches = 0.5,
+    limit_val_batches = 0.8,
     precision=16,
-    val_check_interval=0.5, 
     accelerator="gpu",
     gpus=device_count, 
     default_root_dir="./CodeT5/Checkpoints", 
@@ -261,8 +261,24 @@ trainer = Trainer(
                best_checkpoint_callback]
     )
 
-print("Trainer Ready, Tuning Starts!")
-tuner = trainer.tune(model)
-print("Tuner Results: ", tuner)
-print("Training Starts!")
-trainer.fit(model)
+# print("Trainer Ready, Tuning Starts!")
+# tuner = trainer.tune(model)
+# print("Tuner Results: ", tuner)
+# print("Training Starts!")
+# trainer.fit(model)
+
+model.load_from_checkpoint("./CodeT5/ModelCheckpoint/t5model-rewritten-latest-epoch=199-training_loss=0.85.ckpt")
+print("Model Checkpoint Loaded!")
+test_dataloader = DataLoader(test_dataset,  batch_size=8, num_workers=4)
+model.eval()
+itr = iter(test_dataloader)
+batch = next(itr)
+input_ids = batch['input_ids']
+
+outputs = model.model.generate(input_ids, max_length=128, min_length=8, top_p=0.9, do_sample=True)
+output = tokenizer.decode(outputs[0], skip_special_tokens=True,
+                          clean_up_tokenization_spaces=True)
+print(output)
+
+# test_results = trainer.test(model)
+# print(test_results)

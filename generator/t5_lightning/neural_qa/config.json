@@ -1,14 +1,14 @@
 {
     "batch_size" : 16,
-    "max_epoch" : 10,
+    "max_epoch" : 5,
     "model_generator" : "t5-base",
     "model_evaluator" : "google/electra-base-discriminator",
     "max_len_context": 128,
     "max_len_answer" : 64,
     "max_len_question" : 64,
     "max_len_persona": 64,
-    "train_dataset" : "../../../data/focus_train_data.csv",
-    "val_dataset" : "../../../data/focus_val_data.csv",
+    "train_dataset" : "../../../t5_canard/train_question_rewritten_1.csv",
+    "val_dataset" : "../../../t5_canard/val_question_rewritten_1.csv",
     "num_workers" : 4,
     "val_test_split_factor" : 0.5, 
     "task" : "answer_me : ",
@@ -20,9 +20,12 @@
     "lr_scheduler_factor" : 0.9,
     "val_check_interval" : 0.25,
     "lr_scheduler_step" : 4000, 
-    "checkpoint_path" : "./lightning_logs/version_1/checkpoints/epoch=0-step=1810.ckpt",
+    "checkpoint_path" : "",
+    "load_from_checkpoint": false,
     "precision": 16,
     "limit_train_batches": 1.0,
     "limit_val_batches": 1.0,
-    "fast_dev_run": false
+    "fast_dev_run": true,
+    "strategy": "ddp",
+    "accelerator": "gpu"
 }

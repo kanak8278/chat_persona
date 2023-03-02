@@ -72,7 +72,7 @@ class SquadDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         raw = self.dataset.iloc[idx]
-        knowledge, question, answer, persona = raw['ground_knowledge'], raw['query'], raw['answer'], raw['ground_persona']
+        knowledge, question, answer, persona = raw['ground_knowledge'], raw['question_rewritten'], raw['answer'], raw['ground_persona']
         persona = " ".join(ast.literal_eval(persona))
         if persona is None:
           persona = " "
@@ -103,6 +103,7 @@ class SquadDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         return DataLoader(self.test_dataset, num_workers=self.args.num_workers, batch_size=self.batch_size)
     
+
 class LitQGModel(pl.LightningModule):
     def __init__(self, args):
         super().__init__()
@@ -115,6 +116,7 @@ class LitQGModel(pl.LightningModule):
         self.cross_entropy_loss = nn.CrossEntropyLoss()
         self.gamma = args.gamma
         self.lr = args.learning_rate
+        self.automatic_optimization = False 
     
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.lr)
@@ -131,18 +133,22 @@ class LitQGModel(pl.LightningModule):
         loss = self.compute_loss(batch, batch_idx)
         
         optimizer = self.optimizers()
+        scheduler = self.lr_schedulers()
         
         # backward
         self.manual_backward(loss)
-        
+                
         if (batch_idx + 1) % self.args.accumulate_grad_batches == 0:
             optimizer.step()
-            optimizer.zero_grad()
-        
+            optimizer.zero_grad() # It is good practice to call optimizer.zero_grad() before self.manual_backward(loss).
+            
+            # lr scheduler        
+            scheduler.step(loss)
+
             self.log('train_loss', loss, prog_bar=True)
             return loss
         
-    
+
     def forward(self, input_ids, attention_mask):
         output = self.generator.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=5)
         return output

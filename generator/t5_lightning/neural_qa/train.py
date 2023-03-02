@@ -19,18 +19,20 @@ if __name__ == '__main__':
     args = open('config.json').read()
     args = json.loads(args)
     args = dict2obj(args)
-    print(args)
-    early_stop_callback = EarlyStopping(monitor='val_loss', patience=5, strict=False, verbose=True, mode='min')
+    early_stop_callback = EarlyStopping(monitor='val_loss', patience=3, strict=False, verbose=True, mode='min')
     trainer_args = {'gpus' : -1, 'max_epochs' : args.max_epoch,
                     'val_check_interval' : args.val_check_interval,
                     'precision' : args.precision,
                     'limit_train_batches': args.limit_train_batches,
                     'limit_val_batches': args.limit_val_batches,
                     'fast_dev_run' : args.fast_dev_run,
+                    'strategy': args.strategy,
+                    # 'accelerator': args.accelerator
                     }
 
     trainer = pl.Trainer(**trainer_args)
     model = LitQGModel(args)
-    model.load_from_checkpoint(checkpoint_path = args.checkpoint_path, args = args)
+    if args.load_from_checkpoint:
+        model.load_from_checkpoint(checkpoint_path = args.checkpoint_path, args = args)
     dm = SquadDataModule(args)
     trainer.fit(model, dm)

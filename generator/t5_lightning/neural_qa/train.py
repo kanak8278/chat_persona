@@ -20,17 +20,22 @@ if __name__ == '__main__':
     args = json.loads(args)
     args = dict2obj(args)
     early_stop_callback = EarlyStopping(monitor='val_loss', patience=3, strict=False, verbose=True, mode='min')
-    trainer_args = {'gpus' : -1, 'max_epochs' : args.max_epoch,
-                    'val_check_interval' : args.val_check_interval,
-                    'precision' : args.precision,
-                    'limit_train_batches': args.limit_train_batches,
-                    'limit_val_batches': args.limit_val_batches,
-                    'fast_dev_run' : args.fast_dev_run,
-                    'strategy': args.strategy,
-                    # 'accelerator': args.accelerator
+    model_checkpoint_callback = ModelCheckpoint(monitor='val_loss', dirpath="./saved_weights", filename='checkpoint-{epoch:02d}-{val_loss:.2f}', save_top_k=3, mode='min')
+    
+    trainer_args = {
+        'accelerator': args.accelerator,
+        'devices' : args.devices,
+        'max_epochs' : args.max_epoch,
+        'val_check_interval' : args.val_check_interval,
+        'precision' : args.precision,
+        'limit_train_batches': args.limit_train_batches,
+        'limit_val_batches': args.limit_val_batches,
+        'fast_dev_run' : args.fast_dev_run,
+        # 'strategy': args.strategy,
                     }
 
-    trainer = pl.Trainer(**trainer_args)
+    trainer = pl.Trainer(**trainer_args, callbacks=[early_stop_callback, model_checkpoint_callback])
+    
     model = LitQGModel(args)
     if args.load_from_checkpoint:
         model.load_from_checkpoint(checkpoint_path = args.checkpoint_path, args = args)

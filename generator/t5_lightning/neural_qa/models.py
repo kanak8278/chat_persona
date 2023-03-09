@@ -7,11 +7,9 @@ import torch.optim as optim
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, Dataset, random_split
 from transformers import T5Tokenizer, T5ForConditionalGeneration, ElectraTokenizer, ElectraModel
-from collections import namedtuple
-# import ray.tune as tune
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import nltk
-# nltk.download('punkt')
 from nltk.tokenize import sent_tokenize, word_tokenize
 from nltk.translate.bleu_score import sentence_bleu
 import json
@@ -53,7 +51,7 @@ class Tokenizer:
             
             input_ids = torch.LongTensor([k[:-1] + p + q for (k, p, q) in zip(batch_knowledge.input_ids, batch_persona.input_ids, batch_question.input_ids)])
             attention_mask = torch.FloatTensor([k[:-1] + p + q for (k, p, q) in zip(batch_knowledge.attention_mask, batch_persona.attention_mask, batch_question.attention_mask)])
-            
+            # print(input_ids.shape)
             return input_ids, attention_mask
     
        
@@ -142,8 +140,8 @@ class LitQGModel(pl.LightningModule):
             optimizer.step()
             optimizer.zero_grad() # It is good practice to call optimizer.zero_grad() before self.manual_backward(loss).
             
-            # lr scheduler        
-            scheduler.step(loss)
+            # # lr scheduler        
+            # scheduler.step(loss)
 
             self.log('train_loss', loss, prog_bar=True)
             return loss
@@ -165,8 +163,9 @@ class LitQGModel(pl.LightningModule):
         for i in range(batch_size):
             prediction = self.tokenizer.decode(prob[i, :, :].argmax(dim=-1).tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
             ground_truth = self.tokenizer.decode(decoder_input_ids[i, :].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
-            
-            r = 1 - self.evaluator(prediction, ground_truth)
+            persona = self.tokenizer.decode(input_ids[i, self.args.max_len_context-2:self.args.max_len_context+64].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            # print(persona)
+            r = 1 - self.evaluator(prediction, ground_truth, persona)
             loss_tune[i] = r * self.cross_entropy_loss(logits[i], decoder_input_ids[i])
         
         loss_tune = loss_tune.mean()
@@ -183,27 +182,30 @@ class LitQGModel(pl.LightningModule):
         self.log('ptl/val_loss', avg_loss)
 
 
-
 class Evaluator:
     def __init__(self, args, device):
         self.args = args
         self.tokenizer = ElectraTokenizer.from_pretrained(args.model_evaluator)
         self.model = ElectraModel.from_pretrained(args.model_evaluator).eval().to(device)
-        self.alpha = args.alpha
+        self.alpha = 0.5
+        self.beta = 0.5
+        self.delta = 0.5
+        
         self.device = device
         self.cos = nn.CosineSimilarity(dim=-1, eps=1e-6)
 
     def scale_reward(self, reward):
-        return (reward + 1 - self.alpha) / (2 - self.alpha)
+        return (reward + 1 - (self.alpha+self.beta + self.delta)) / (2 - (self.alpha+self.beta + self.delta))
         
-    def __call__(self, sen1, sen2):
+    def __call__(self, sen1, sen2, persona):
         with torch.no_grad():
-            input_ids = self.tokenizer([sen1.lower(), sen2.lower()], return_tensors='pt', truncation=True, padding=True).to(self.device)
+            input_ids = self.tokenizer([sen1.lower(), sen2.lower(), persona.lower()], return_tensors='pt', truncation=True, padding=True).to(self.device)
             out = self.model(**input_ids)['last_hidden_state']
             sim = self.cos(out[0, 0, :], out[1, 0, :]).item()
+            persona_sim = self.cos(out[0, 0, :], out[2, 0, :]).item()
             sen1_tokens = word_tokenize(sen1)
             sen2_tokens = word_tokenize(sen2)
             bleu = sentence_bleu([sen2_tokens], sen1_tokens)
-            reward = bleu * self.alpha + (1 - self.alpha) * sim
-            
+            # print(f'BLEU: {bleu}, SIM: {sim}, PERSONA_SIM: {persona_sim}')
+            reward = self.alpha * bleu + self.beta * sim + self.delta * persona_sim
             return self.scale_reward(reward)

@@ -8,7 +8,6 @@ data/
 *.txt
 **/wandb/
 **/t5_grd_knw_grd_persona/
-generator/t5_lightning/neural_qa/lightning_logs/
 **/*.err
 **/*.out
 **/*.sh
@@ -16,3 +15,4 @@ generator/t5_lightning/neural_qa/lightning_logs/
 **/*weight*/
 **/__pycache__/
 **/*.ckpt/
+**/lightning_logs/

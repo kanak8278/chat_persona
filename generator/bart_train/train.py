@@ -19,8 +19,20 @@ if __name__ == '__main__':
     args = open('config.json').read()
     args = json.loads(args)
     args = dict2obj(args)
-    early_stop_callback = EarlyStopping(monitor='val_loss', patience=10, strict=False, verbose=True, mode='min')
-    model_checkpoint_callback = ModelCheckpoint(monitor='val_loss', dirpath="./saved_weights", filename='checkpoint-{epoch:02d}-{val_loss:.2f}', save_top_k=3, mode='min')
+    
+    # tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
+    
+    #Debugging code
+    # train_dataset = FocusDataset(args, train=True)
+    # for idx, data in enumerate(train_dataset):
+    #     (input_ids, attention_mask), (labels, decoder_attention_mask) = data
+    #     print(tokenizer.decode(input_ids[0], skip_special_tokens=True))
+    #     print()
+    #     if idx >= 5:        
+    #         break
+    
+    early_stop_callback = EarlyStopping(monitor='val_loss', patience=5, strict=False, verbose=True, mode='min')
+    model_checkpoint_callback = ModelCheckpoint(monitor='val_loss', dirpath="./saved_weights", filename='checkpoint-{epoch:02d}-{val_loss:.2f}', save_top_k=2, mode='min')
     
     trainer_args = {
         'accelerator': args.accelerator,

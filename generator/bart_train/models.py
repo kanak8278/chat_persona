@@ -7,14 +7,17 @@ from torch.utils.data import DataLoader, Dataset, random_split
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.translate.bleu_score import sentence_bleu
 # from termcolor import colored
 import textwrap
 import ast
 from transformers import (
     BartTokenizer,
+    ElectraTokenizer,
+    ElectraModel,
     BartForConditionalGeneration,
     BartConfig,
-    AdamW,
 )
 
 from tqdm.auto import tqdm
@@ -24,7 +27,6 @@ from matplotlib import rcParams, rc
 
 pl.seed_everything(42)
 
-train_df = pd.read_csv("/home/ubuntu/chat_persona/data/question_rewritten/test_question_rewritten_hit_knowledge_1.csv")
 
 class Tokenizer:
     def __init__(self, args):
@@ -47,7 +49,7 @@ class Tokenizer:
                                           return_attention_mask=True,
                                           return_tensors='pt')
             labels = batch_answer.input_ids.clone()
-            labels[labels==0] = -100
+            # labels[labels==0] = -100
             return labels, batch_answer.attention_mask
 
         else:
@@ -101,7 +103,7 @@ class FocusDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         raw = self.dataset.iloc[idx]
-        knowledge, question, answer, persona = raw['ground_knowledge'], raw['question_rewritten'], raw['answer'], raw['ground_persona']
+        knowledge, question, answer, persona = raw['hit_knowledge'], raw['question_rewritten'], raw['answer'], raw['ground_persona']
         persona = " ".join(ast.literal_eval(persona))
         if persona is None:
           persona = " "
@@ -141,17 +143,97 @@ class FocusDataModule(pl.LightningDataModule):
                           batch_size=self.batch_size,
                           shuffle=False)
 
+# class FocusModel(pl.LightningModule):
+#     def __init__(self, args):
+#         super().__init__()
+#         self.automatic_optimization = False
+#         self.args = args
+#         self.device_ = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+#         self.model = BartForConditionalGeneration.from_pretrained(args.model_generator)
+#         # self.tokenizer = BartTokenizer(args.model_generator)
+#         self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
+#         self.gamma = args.gamma
+#         self.lr = args.learning_rate
+#         self.automatic_optimization = False 
+    
+#     def configure_optimizers(self):
+#         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
+#         scheduler = {
+#             'scheduler' : torch.optim.lr_scheduler.StepLR(optimizer, self.args.lr_scheduler_step, gamma=self.args.lr_scheduler_factor),
+#             'interval' : 'step',
+#             'frequency' : 1,
+#             'strict' : True
+#         }
+#         return [optimizer], [scheduler]
+    
+
+#     def forward(self, input_ids, attention_mask, decoder_attention_mask, labels=None):
+#         output = self.model(input_ids=input_ids, attention_mask=attention_mask, decoder_attention_mask=decoder_attention_mask, labels=labels)
+#         # output = self.generator.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=5)
+#         return output.loss, output.logits
+    
+#     def training_step(self, batch, batch_idx):
+#         input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
+#         labels, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
+#         loss, outputs = self(input_ids= input_ids,
+#                 attention_mask=attention_mask,
+#                 decoder_attention_mask=decoder_attention_mask,
+#                 labels=labels)
+#         self.log('train_loss', loss, prog_bar=True, logger=True)
+#         return loss
+    
+#     def validation_step(self, batch, batch_idx):
+#         input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
+#         labels, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
+#         loss, outputs = self(input_ids= input_ids,
+#              attention_mask=attention_mask,
+#              decoder_attention_mask=decoder_attention_mask,
+#              labels=labels)
+#         # self.model.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=5, early_stopping=True, max_length=self.args.answer_max_length)
+#         self.log('val_loss', loss, prog_bar=True, logger=True)
+#         return loss
+    
+#     def validation_epoch_end(self, outputs):
+#         avg_loss = torch.stack(outputs).mean()
+#         self.log('ptl/val_loss', avg_loss)
+    
+#     # def compute_loss(self, batch, batch_idx):
+#     #     input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
+#     #     decoder_input_ids, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
+#     #     out = self.generator(input_ids=input_ids, attention_mask=attention_mask, decoder_attention_mask=decoder_attention_mask, labels=decoder_input_ids)
+#     #     loss, logits = out.loss, out.logits
+#     #     prob = torch.functional.softmax(logits, dim=-1)
+#     #     batch_size = input_ids.shape[0]
+#     #     loss_tune = torch.zeros(batch_size)
+        
+#     #     for i in range(batch_size):
+#     #         prediction = self.tokenizer.decode(prob[i, :, :].argmax(dim=-1).tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
+#     #         ground_truth = self.tokenizer.decode(decoder_input_ids[i, :].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
+#     #         persona = self.tokenizer.decode(input_ids[i, self.args.max_len_context-2:self.args.max_len_context+64].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
+#     #         # print(persona)
+#     #         r = 1 - self.evaluator(prediction, ground_truth, persona)
+#     #         loss_tune[i] = r * self.cross_entropy_loss(logits[i], decoder_input_ids[i])
+        
+#     #     loss_tune = loss_tune.mean()
+#     #     loss = loss * self.gamma + (1 - self.gamma) * loss_tune
+#     #     return loss
+    
+#     # def validation_step(self, batch, batch_idx):
+#     #     loss = self.compute_loss(batch, batch_idx)
+#     #     self.log('val_loss', loss, on_step=True)
+#     #     return loss
 class FocusModel(pl.LightningModule):
     def __init__(self, args):
         super().__init__()
         self.automatic_optimization = False
         self.args = args
         self.device_ = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = BartForConditionalGeneration.from_pretrained(args.model_generator)
+        self.evaluator = Evaluator(args, self.device_)
+        self.generator = BartForConditionalGeneration.from_pretrained(args.model_generator)
+        self.tokenizer = BartTokenizer.from_pretrained(args.model_generator)
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
         self.gamma = args.gamma
         self.lr = args.learning_rate
-        self.automatic_optimization = False 
     
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
@@ -163,67 +245,93 @@ class FocusModel(pl.LightningModule):
         }
         return [optimizer], [scheduler]
     
-
-
-    def forward(self, input_ids, attention_mask, decoder_attention_mask, labels=None):
-        output = self.model(input_ids=input_ids, attention_mask=attention_mask, decoder_attention_mask=decoder_attention_mask, labels=labels)
-        # output = self.generator.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=5)
-        return output.loss, output.logits
-    
     def training_step(self, batch, batch_idx):
+        # forward
+        loss = self.compute_loss(batch, batch_idx)
+        
+        optimizer = self.optimizers()
+        scheduler = self.lr_schedulers()
+        
+        # backward
+        self.manual_backward(loss)
+                
+        if (batch_idx + 1) % self.args.accumulate_grad_batches == 0:
+            optimizer.step()
+            optimizer.zero_grad() # It is good practice to call optimizer.zero_grad() before self.manual_backward(loss).
+            
+            # # lr scheduler        
+            # scheduler.step(loss)
+
+            self.log('train_loss', loss, prog_bar=True)
+            return loss
+        
+
+    def forward(self, input_ids, attention_mask):
+        output = self.generator.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=5)
+        return output
+    
+    def compute_loss(self, batch, batch_idx):
         input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
-        labels, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
-        loss, outputs = self(input_ids= input_ids,
-                attention_mask=attention_mask,
-                decoder_attention_mask=decoder_attention_mask,
-                labels=labels)
-        self.log('train_loss', loss, prog_bar=True, logger=True)
+        decoder_input_ids, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
+        out = self.generator(input_ids=input_ids, attention_mask=attention_mask, decoder_attention_mask=decoder_attention_mask, labels=decoder_input_ids)
+        loss, logits = out.loss, out.logits
+        prob = torch.nn.functional.softmax(logits, dim=-1)
+        batch_size = input_ids.shape[0]
+        loss_tune = torch.zeros(batch_size)
+        
+        for i in range(batch_size):
+            prediction = self.tokenizer.decode(prob[i, :, :].argmax(dim=-1).tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            ground_truth = self.tokenizer.decode(decoder_input_ids[i, :].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            persona = self.tokenizer.decode(input_ids[i, self.args.max_len_context-2:self.args.max_len_context+64].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            # print(persona)
+            r = 1 - self.evaluator(prediction, ground_truth, persona)
+            loss_tune[i] = r * self.cross_entropy_loss(logits[i], decoder_input_ids[i])
+        
+        loss_tune = loss_tune.mean()
+        loss = loss * self.gamma + (1 - self.gamma) * loss_tune
         return loss
     
     def validation_step(self, batch, batch_idx):
-        input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
-        labels, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
-        loss, outputs = self(input_ids= input_ids,
-             attention_mask=attention_mask,
-             decoder_attention_mask=decoder_attention_mask,
-             labels=labels)
-        self.log('val_loss', loss, prog_bar=True, logger=True)
+        loss = self.compute_loss(batch, batch_idx)
+        self.log('val_loss', loss, on_step=True)
         return loss
     
     def validation_epoch_end(self, outputs):
         avg_loss = torch.stack(outputs).mean()
         self.log('ptl/val_loss', avg_loss)
-    
-    # def compute_loss(self, batch, batch_idx):
-    #     input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
-    #     decoder_input_ids, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
-    #     out = self.generator(input_ids=input_ids, attention_mask=attention_mask, decoder_attention_mask=decoder_attention_mask, labels=decoder_input_ids)
-    #     loss, logits = out.loss, out.logits
-    #     prob = torch.functional.softmax(logits, dim=-1)
-    #     batch_size = input_ids.shape[0]
-    #     loss_tune = torch.zeros(batch_size)
-        
-    #     for i in range(batch_size):
-    #         prediction = self.tokenizer.decode(prob[i, :, :].argmax(dim=-1).tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
-    #         ground_truth = self.tokenizer.decode(decoder_input_ids[i, :].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
-    #         persona = self.tokenizer.decode(input_ids[i, self.args.max_len_context-2:self.args.max_len_context+64].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
-    #         # print(persona)
-    #         r = 1 - self.evaluator(prediction, ground_truth, persona)
-    #         loss_tune[i] = r * self.cross_entropy_loss(logits[i], decoder_input_ids[i])
-        
-    #     loss_tune = loss_tune.mean()
-    #     loss = loss * self.gamma + (1 - self.gamma) * loss_tune
-    #     return loss
-    
-    # def validation_step(self, batch, batch_idx):
-    #     loss = self.compute_loss(batch, batch_idx)
-    #     self.log('val_loss', loss, on_step=True)
-    #     return loss
-    
-    
 
+    
+class Evaluator:
+    def __init__(self, args, device):
+        self.args = args
+        self.tokenizer = ElectraTokenizer.from_pretrained(args.model_evaluator)
+        self.model = ElectraModel.from_pretrained(args.model_evaluator).eval().to(device)
+        self.alpha = 0.5
+        self.beta = 0.20
+        self.delta = 0.30
+        
+        self.device = device
+        self.cos = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
 
-if __name__ == '__main__':    
+    def scale_reward(self, reward):
+        return (reward + 1 - (self.alpha+self.beta + self.delta)) / (2 - (self.alpha+self.beta + self.delta))
+        
+    def __call__(self, sen1, sen2, persona):
+        with torch.no_grad():
+            input_ids = self.tokenizer([sen1.lower(), sen2.lower(), persona.lower()], return_tensors='pt', truncation=True, padding=True).to(self.device)
+            out = self.model(**input_ids)['last_hidden_state']
+            sim = self.cos(out[0, 0, :], out[1, 0, :]).item()
+            persona_sim = self.cos(out[0, 0, :], out[2, 0, :]).item()
+            sen1_tokens = word_tokenize(sen1)
+            sen2_tokens = word_tokenize(sen2)
+            bleu = sentence_bleu([sen2_tokens], sen1_tokens)
+            # print(f'BLEU: {bleu}, SIM: {sim}, PERSONA_SIM: {persona_sim}')
+            reward = self.alpha * bleu + self.beta * sim + self.delta * persona_sim
+            return self.scale_reward(reward)
+        
+
+if __name__ == '__main__':
+    # train_df = pd.read_csv("/home/ubuntu/chat_persona/data/question_rewritten/test_question_rewritten_hit_knowledge_1.csv")    
     persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts = [], [], [], []
 
 

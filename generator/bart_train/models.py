@@ -37,7 +37,7 @@ class Tokenizer:
         self.max_len_persona = args.max_len_persona
         self.task = args.task
         
-    def __call__(self, knowledge=None, question=None, persona = None, answer=None,):
+    def __call__(self, knowledge=None, question=None, persona = None, answer=None, history=None, **kwargs):
         if answer:
             if type(answer) is not list:
                 answer = [answer]
@@ -59,11 +59,13 @@ class Tokenizer:
                 question = [question]
             if type(persona) is not list:
                 persona = [persona]
-            
+            if type(history) is not list:
+                history = [history]
                 
             # add separate token to answers
             knowledge = [self.task + ' ' + c for c in knowledge]
             persona = [' ' + str(per) for per in persona]
+            history = [' ' + str(his) for his in history]
             question = [' ' + str(ques) for ques in question]
             
             batch_knowledge = self.tokenizer(knowledge,
@@ -71,6 +73,12 @@ class Tokenizer:
                                              padding='max_length',
                                              truncation=True,
                                              add_special_tokens=True)
+            batch_history = self.tokenizer(history,
+                                             max_length=self.max_len_history,
+                                             padding='max_length',
+                                             truncation=True,
+                                             add_special_tokens=True)
+            
             batch_question = self.tokenizer(question,
                                             max_length=self.max_len_persona,
                                             padding='max_length',
@@ -82,14 +90,15 @@ class Tokenizer:
                                            truncation=True,
                                            add_special_tokens=True)
             
-            input_ids = torch.LongTensor([k[:-1] + p + q for (k, p, q) in zip(batch_knowledge.input_ids, batch_persona.input_ids, batch_question.input_ids)])
-            attention_mask = torch.FloatTensor([k[:-1] + p + q for (k, p, q) in zip(batch_knowledge.attention_mask, batch_persona.attention_mask, batch_question.attention_mask)])
+            input_ids = torch.LongTensor([k[:-1] + p + h + q for (k, p, h, q) in zip(batch_knowledge.input_ids, batch_persona.input_ids, batch_history.input_ids, batch_question.input_ids)])
+            attention_mask = torch.FloatTensor([k[:-1] + p + h + q for (k, p, h, q) in zip(batch_knowledge.attention_mask, batch_persona.attention_mask, batch_history.input_ids, batch_question.attention_mask)])
             # print(input_ids.shape)
             return input_ids, attention_mask
     
        
 class FocusDataset(Dataset):
     def __init__(self, args, train=True):
+        self.args = args
         self.tokenizer = Tokenizer(args)
         if train:
             self.dataset = pd.read_csv(args.train_dataset)
@@ -104,6 +113,11 @@ class FocusDataset(Dataset):
             idx = idx.tolist()
         raw = self.dataset.iloc[idx]
         knowledge, question, answer, persona = raw['hit_knowledge'], raw['question_rewritten'], raw['answer'], raw['ground_persona']
+        
+        history = raw['dialog_history']
+        history_size = min (self.args.history_size,  len(history)) 
+        history = history[-history_size:]
+        
         persona = " ".join(ast.literal_eval(persona))
         if persona is None:
           persona = " "
@@ -331,9 +345,15 @@ class Evaluator:
         
 
 if __name__ == '__main__':
-    # train_df = pd.read_csv("/home/ubuntu/chat_persona/data/question_rewritten/test_question_rewritten_hit_knowledge_1.csv")    
-    persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts = [], [], [], []
-
+    train_df = pd.read_csv("/home/ubuntu/chat_persona/data/question_rewritten/test_question_rewritten_hit_knowledge_1.csv")    
+    # persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts = [], [], [], []
+    # print(train_df.columns)
+    history = ast.literal_eval(train_df['dialog_history'][1])
+    print(len(history)//2) 
+    history_size = min (2,  2*len(history)//2) 
+    
+    history = history[-history_size:][::-1]
+    print(history)
 
     # tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
 

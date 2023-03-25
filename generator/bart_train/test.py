@@ -6,10 +6,10 @@ from torchmetrics.functional.text.rouge import rouge_score
 from torchmetrics.text.bert import BERTScore
 # from nubia_score import Nubia
 
-# import nltk
-# nltk.download('punkt')
-# from nltk.tokenize import sent_tokenize, word_tokenize
-# from nltk.translate.bleu_score import SmoothingFunction
+import nltk
+nltk.download('punkt')
+from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.translate.bleu_score import SmoothingFunction
 # from bert_score import BERTScorer 
 # from rouge import Rouge
 # cc = SmoothingFunction()
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     # outputs['answer'] = merge_df['answer']
     # outputs.to_csv('./bart_predictions_exp_2.csv', index=False)
     
-    df = pd.read_csv('/home/ubuntu/chat_persona/generator/bart_train/neural_predictions_q_rewritten_1.csv')
+    df = pd.read_csv('/home/ubuntu/chat_persona/generator/bart_train/neural_predictions_q_rewritten_0.csv')
     print(df.columns)
     
     ground = list(df['answer'])
@@ -137,16 +137,21 @@ if __name__ == '__main__':
     #     print("===============================================================")
     #     break
     
-    
-    bleu = bleu_score(preds, ground)
-    print("Bleu Score: ", bleu)
+    print("Metrics evaluation starting:")
     print("===================================================================================")
     
+    # print("Calculating Bleu Score")
+    # bleu = bleu_score(preds, ground)
+    # print("Bleu Score: ", bleu)
+    # print("===================================================================================")
+    
+    print("Calculating Rouge Score")
     rouge = rouge_score(preds[:], ground[:])
     print("Rouge Score: ", rouge)
     print("===================================================================================")
     
     bertscore = BERTScore('bert-base-uncased')
+    print("Calculating BERT Score")
     bert = bertscore(preds[:], ground[:])
     bert = {k: sum(vv)/len(vv) for k, vv in bert.items()}
     print("BERT Score: ", bert)

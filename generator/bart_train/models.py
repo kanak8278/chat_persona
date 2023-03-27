@@ -35,7 +35,9 @@ class Tokenizer:
         self.max_len_answer = args.max_len_answer
         self.max_len_question = args.max_len_question
         self.max_len_persona = args.max_len_persona
+        self.max_len_history = args.max_len_history
         self.task = args.task
+
         
     def __call__(self, knowledge=None, question=None, persona = None, answer=None, history=None, **kwargs):
         if answer:
@@ -59,13 +61,12 @@ class Tokenizer:
                 question = [question]
             if type(persona) is not list:
                 persona = [persona]
-            if type(history) is not list:
-                history = [history]
+           
                 
             # add separate token to answers
             knowledge = [self.task + ' ' + c for c in knowledge]
             persona = [' ' + str(per) for per in persona]
-            history = [' ' + str(his) for his in history]
+
             question = [' ' + str(ques) for ques in question]
             
             batch_knowledge = self.tokenizer(knowledge,
@@ -73,12 +74,8 @@ class Tokenizer:
                                              padding='max_length',
                                              truncation=True,
                                              add_special_tokens=True)
-            batch_history = self.tokenizer(history,
-                                             max_length=self.max_len_history,
-                                             padding='max_length',
-                                             truncation=True,
-                                             add_special_tokens=True)
             
+                
             batch_question = self.tokenizer(question,
                                             max_length=self.max_len_persona,
                                             padding='max_length',
@@ -90,9 +87,23 @@ class Tokenizer:
                                            truncation=True,
                                            add_special_tokens=True)
             
-            input_ids = torch.LongTensor([k[:-1] + p + h + q for (k, p, h, q) in zip(batch_knowledge.input_ids, batch_persona.input_ids, batch_history.input_ids, batch_question.input_ids)])
-            attention_mask = torch.FloatTensor([k[:-1] + p + h + q for (k, p, h, q) in zip(batch_knowledge.attention_mask, batch_persona.attention_mask, batch_history.input_ids, batch_question.attention_mask)])
-            # print(input_ids.shape)
+            if self.max_len_history is not None and history is not None:
+                
+                if type(history) is not list:
+                    history = [history]
+                
+                history = [' ' + str(his) for his in history]   
+                batch_history = self.tokenizer(history,
+                                                 max_length=self.max_len_history,
+                                                 padding='max_length',
+                                                 truncation=True,
+                                                 add_special_tokens=True)
+                input_ids = torch.LongTensor([k[:-1] + p + h + q for (k, p, h, q) in zip(batch_knowledge.input_ids, batch_persona.input_ids, batch_history.input_ids, batch_question.input_ids)])
+                attention_mask = torch.FloatTensor([k[:-1] + p + h + q for (k, p, h, q) in zip(batch_knowledge.attention_mask, batch_persona.attention_mask, batch_history.input_ids, batch_question.attention_mask)])
+            else:
+                input_ids = torch.LongTensor([k[:-1] + p  + q for (k, p, q) in zip(batch_knowledge.input_ids, batch_persona.input_ids, batch_question.input_ids)])
+                attention_mask = torch.FloatTensor([k[:-1] + p +  q for (k, p, q) in zip(batch_knowledge.attention_mask, batch_persona.attention_mask, batch_question.attention_mask)])
+            
             return input_ids, attention_mask
     
        
@@ -113,15 +124,20 @@ class FocusDataset(Dataset):
             idx = idx.tolist()
         raw = self.dataset.iloc[idx]
         knowledge, question, answer, persona = raw['hit_knowledge'], raw['question_rewritten'], raw['answer'], raw['ground_persona']
-        
-        history = raw['dialog_history']
-        history_size = min (self.args.history_size,  len(history)) 
-        history = history[-history_size:]
-        
+        if self.args.max_len_history > 0:
+            history = ast.literal_eval(raw['dialog_history'])
+            if type(history) is not list or history is None or history == []:
+                history = " "
+            else:
+                history_size = min (self.args.history_size,  len(history)) 
+                history = history[-history_size:]
+                history = " ".join(history)
+        else:
+            history = None        
         persona = " ".join(ast.literal_eval(persona))
         if persona is None:
           persona = " "
-        return self.tokenizer(knowledge=knowledge, question=question, persona=persona), self.tokenizer(answer=answer)
+        return self.tokenizer(knowledge=knowledge, question=question, persona=persona, history = history), self.tokenizer(answer=answer)
 
 
 class FocusDataModule(pl.LightningDataModule):
@@ -248,6 +264,7 @@ class FocusModel(pl.LightningModule):
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
         self.gamma = args.gamma
         self.lr = args.learning_rate
+        self.validation_step_outputs = []
     
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
@@ -308,11 +325,16 @@ class FocusModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         loss = self.compute_loss(batch, batch_idx)
         self.log('val_loss', loss, on_step=True)
+        self.validation_step_outputs.append(loss)
         return loss
+    def on_validation_epoch_end(self):
+        epoch_average = torch.stack(self.validation_step_outputs).mean()
+        self.log("validation_epoch_average", epoch_average)
+        self.validation_step_outputs.clear()  # free memory
     
-    def validation_epoch_end(self, outputs):
-        avg_loss = torch.stack(outputs).mean()
-        self.log('ptl/val_loss', avg_loss)
+    # def validation_epoch_end(self, outputs):
+    #     avg_loss = torch.stack(outputs).mean()
+    #     self.log('ptl/val_loss', avg_loss)
 
     
 class Evaluator:
@@ -345,42 +367,55 @@ class Evaluator:
         
 
 if __name__ == '__main__':
-    train_df = pd.read_csv("/home/ubuntu/chat_persona/data/question_rewritten/test_question_rewritten_hit_knowledge_1.csv")    
-    # persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts = [], [], [], []
-    # print(train_df.columns)
-    history = ast.literal_eval(train_df['dialog_history'][1])
-    print(len(history)//2) 
-    history_size = min (2,  2*len(history)//2) 
+    train_df = pd.read_csv("/home/ubuntu/chat_persona/data/question_rewritten/test_question_rewritten_hit_knowledge_1.csv")
+    # train_df = train_df.iloc[:100]    
+    persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts, history_token_counts = [], [], [], [], []
     
-    history = history[-history_size:][::-1]
-    print(history)
+    tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
 
-    # tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
-
-    # for _, row in train_df.iterrows():
-    #     persona_token_count = len(tokenizer.encode(row['ground_persona']))
-    #     persona_token_counts.append(persona_token_count)
+    for _, row in train_df.iterrows():
+        persona = " ".join(ast.literal_eval(row['ground_persona']))
+        persona_token_count = len(tokenizer.encode(persona))
+        persona_token_counts.append(persona_token_count)
         
-    #     knowledge_token_count = len(tokenizer.encode(row['ground_knowledge']))
-    #     knowledge_token_counts.append(knowledge_token_count)
+        knowledge_token_count = len(tokenizer.encode(row['ground_knowledge']))
+        knowledge_token_counts.append(knowledge_token_count)
         
-    #     question_token_count = len(tokenizer.encode(row['question_rewritten']))
-    #     question_token_counts.append(question_token_count)
+        question_token_count = len(tokenizer.encode(row['question_rewritten']))
+        question_token_counts.append(question_token_count)
         
-    #     answer_token_count = len(tokenizer.encode(row['answer']))
-    #     answer_token_counts.append(answer_token_count)
+        answer_token_count = len(tokenizer.encode(row['answer']))
+        answer_token_counts.append(answer_token_count)
+        
+        
+        history = ast.literal_eval(row['dialog_history'])
+        history_size = min (2*2,  len(history)) 
+        history = history[-history_size:]
+        history_token_count = len(tokenizer.encode(" ".join(history)))
+        history_token_counts.append(history_token_count)
 
-    # fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(20, 5))
-    # sns.histplot(persona_token_counts, ax=ax1)
-    # ax1.set_title('Persona')
+    fig, (ax1, ax2, ax3, ax4, ax5, ax6) = plt.subplots(1, 6, figsize=(30, 5))
+    sns.histplot(persona_token_counts, ax=ax1)
+    ax1.set_title('Persona')
 
-    # sns.histplot(knowledge_token_counts, ax=ax2)
-    # ax2.set_title('Knowledge')
+    sns.histplot(knowledge_token_counts, ax=ax2)
+    ax2.set_title('Knowledge')
 
-    # sns.histplot(question_token_counts, ax=ax3)
-    # ax3.set_title('Question')
+    sns.histplot(question_token_counts, ax=ax3)
+    ax3.set_title('Question')
 
-    # sns.histplot(answer_token_counts, ax=ax4)
-    # ax4.set_title('Answer')
-    # plt.savefig('token_counts.png')
+    sns.histplot(answer_token_counts, ax=ax4)
+    ax4.set_title('Answer')
+    
+    sns.histplot(history_token_counts, ax=ax5)
+    ax5.set_title('History')
+
+    
+    assert len(persona_token_counts) == len(knowledge_token_counts) == len(question_token_counts) == len(answer_token_counts) == len(history_token_counts)
+    zipped_list = zip(persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts, history_token_counts)
+    total_counts = [sum(item) for item in zipped_list]
+    sns.histplot(total_counts, ax=ax6)
+    ax6.set_title('Total')
+    
+    plt.savefig('token_counts.png')
         

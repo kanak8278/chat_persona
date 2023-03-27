@@ -1,3 +1,6 @@
+#exp2 takes modified hit knoweldge best of (query rewritten and query)
+#exp3 takes history in account
+
 from models import *
 from tqdm import tqdm
 import json
@@ -31,8 +34,8 @@ def dict2obj(dict1):
     # method and custom object hook as arguments
     return json.loads(json.dumps(dict1), object_hook=obj)
 
-def generate(model, tokenizer, knowledge, question, persona, device):
-    input_ids, attention_mask = tokenizer(knowledge=knowledge, question=question, persona=persona)
+def generate(model, tokenizer, knowledge, question, persona, history, device):
+    input_ids, attention_mask = tokenizer(knowledge=knowledge, question=question, persona=persona, history=history)
     input_ids, attention_mask = input_ids.to(device), attention_mask.to(device)
     with torch.no_grad():
         predictions = model.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=5, max_length=100, early_stopping=True)
@@ -41,7 +44,8 @@ def generate(model, tokenizer, knowledge, question, persona, device):
     return predictions
 
 if __name__ == '__main__':
-    
+    print("Trained on 1-History, but tested on 2-History")
+    print("Trained on question_rewritten_hit_knowledge_1_1 but inference on knowledge_retrieval/test_query_rewritten_1_1.csv")
     # print("===================================================================================")
     # df = pd.read_csv("/home/ubuntu/chat_persona/data/focus_test_data.csv")
     # print(df.columns)
@@ -77,7 +81,7 @@ if __name__ == '__main__':
 
     
 
-    # Generation Code
+    # # Generation Code
     
     # data = pd.read_csv("/home/ubuntu/chat_persona/data/knowledge_retrieval/test_query_rewritten_1_1.csv")
     # print(data.columns)
@@ -92,7 +96,7 @@ if __name__ == '__main__':
     # args = open('config.json').read()
     # args = json.loads(args)
     # args = dict2obj(args)
-    # checkpoint_path = "/home/ubuntu/chat_persona/generator/bart_train/saved_weights/checkpoint-epoch=03-val_loss=0.32.ckpt"
+    # checkpoint_path = "/home/ubuntu/chat_persona/generator/bart_train/saved_weights/checkpoint-epoch=03-val_loss=0.33.ckpt"
     # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # tokenizer = Tokenizer(args)
     # model = FocusModel.load_from_checkpoint(checkpoint_path, args=args).eval().to(device)
@@ -104,13 +108,25 @@ if __name__ == '__main__':
     #     idx+=1
 
     #     knowledge, question, persona, answer = row[1]['hit_knowledge_x'], row[1]['query_x'], row[1]['ground_persona'], row[1]['answer']
+        
+    #     history = None
+    #     history = ast.literal_eval(row[1]['dialog_history'])
+    #     if type(history) is not list or history is None or history == []:
+    #         history = " "
+    #     else:
+    #         history_size = min (args.history_size,  len(history)) 
+    #         history = history[-history_size:]
+    #         history = " ".join(history)
+            
     #     persona = " ".join(ast.literal_eval(persona))
+    #     persona = " "
     #     if persona is None:
     #       persona = " "
-    #     predictions = generate(model = model.generator, tokenizer = tokenizer, knowledge = knowledge, question = question, persona=persona, device=device)
+        
+    #     predictions = generate(model = model.generator, tokenizer = tokenizer, knowledge = knowledge, question = question, persona=persona, history =history, device=device)
     #     outputs.append([row[1]['query_x'], row[1]['hit_knowledge_x'], predictions[0] if type(predictions) is list else predictions])
         
-    #     if idx%53==0:
+    #     if idx%52==0:
     #         print("Query>>>>", question)
     #         print("Knowledge>>>>", knowledge)
     #         print("Ground>>>>", answer)
@@ -121,13 +137,24 @@ if __name__ == '__main__':
             
     # outputs = pd.DataFrame(data=outputs, columns=['query', 'hit_knowledge', 'prediction'])
     # outputs['answer'] = merge_df['answer']
-    # outputs.to_csv('./bart_predictions_exp_2.csv', index=False)
+    # outputs.to_csv('./bart_predictions_exp_6_wo_persona.csv', index=False)
     
-    df = pd.read_csv('/home/ubuntu/chat_persona/generator/bart_train/neural_predictions_q_rewritten_0.csv')
+    df = pd.read_csv('/home/ubuntu/chat_persona/generator/bart_train/bart_predictions_exp_6_wo_persona.csv')
     print(df.columns)
     
     ground = list(df['answer'])
     preds = list(df['prediction'])
+    
+    # print(df.head())
+    
+    # for idx, row in enumerate(df.iterrows()):
+    #     print("Query: ", row[1]['query'])
+    #     print("Knowledge: ",row[1]['hit_knowledge'])
+    #     print("Prediction: ",row[1]['prediction'])
+    #     print("Ground: ", row[1]['answer'])
+    #     print("===============================================================")
+    #     if idx >=50:
+    #         break
     # nubia = Nubia()
     # for grd, pred in zip(ground, preds):
     #     print("Ground: ", grd)
@@ -140,10 +167,10 @@ if __name__ == '__main__':
     print("Metrics evaluation starting:")
     print("===================================================================================")
     
-    # print("Calculating Bleu Score")
-    # bleu = bleu_score(preds, ground)
-    # print("Bleu Score: ", bleu)
-    # print("===================================================================================")
+    print("Calculating Bleu Score")
+    bleu = bleu_score(preds, ground)
+    print("Bleu Score: ", bleu)
+    print("===================================================================================")
     
     print("Calculating Rouge Score")
     rouge = rouge_score(preds[:], ground[:])
@@ -157,16 +184,3 @@ if __name__ == '__main__':
     print("BERT Score: ", bert)
     print("===================================================================================")
    
-   
-   
-    # scores = {}
-    # for idx, (pred, grd) in enumerate(zip(preds, ground)):
-    #     bert = bert_score([pred], [grd])    
-    #     for k, v in bert.items():
-    #         if k not in scores:
-    #             scores[k] = []
-    #         scores[k].append(v)
-    #     # if idx%100==0:
-    #     #     break
-    # scores = {k: sum(vv)/len(vv) for k, vv in scores.items()}
-    # print(scores)

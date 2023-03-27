@@ -49,7 +49,7 @@ if __name__ == '__main__':
     trainer = pl.Trainer(**trainer_args, callbacks=[early_stop_callback, model_checkpoint_callback])
     
     model = FocusModel(args)
-    # if args.load_from_checkpoint:
-    #     model.load_from_checkpoint(checkpoint_path = args.checkpoint_path, args = args)
+    if args.load_from_checkpoint:
+        model.load_from_checkpoint(checkpoint_path = args.checkpoint_path, args = args)
     dm = FocusDataModule(args)
     trainer.fit(model, dm)

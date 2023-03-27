@@ -44,8 +44,7 @@ def generate(model, tokenizer, knowledge, question, persona, history, device):
     return predictions
 
 if __name__ == '__main__':
-    print("Trained on 1-History, but tested on 2-History")
-    print("Trained on question_rewritten_hit_knowledge_1_1 but inference on knowledge_retrieval/test_query_rewritten_1_1.csv")
+    
     # print("===================================================================================")
     # df = pd.read_csv("/home/ubuntu/chat_persona/data/focus_test_data.csv")
     # print(df.columns)
@@ -81,65 +80,60 @@ if __name__ == '__main__':
 
     
 
-    # # Generation Code
-    
-    # data = pd.read_csv("/home/ubuntu/chat_persona/data/knowledge_retrieval/test_query_rewritten_1_1.csv")
-    # print(data.columns)
-    # df = pd.read_csv("/home/ubuntu/chat_persona/data/question_rewritten/test_question_rewritten_hit_knowledge_1.csv")
-    # print(df.columns)
-    # print(df.shape, data.shape )
-    
-    # merge_df = pd.merge(data, df, on=['dialogID', 'utterance'], how='left')
-    # print(merge_df.shape)
-    # print(merge_df.columns)    
-    # print("===================================================================================")
-    # args = open('config.json').read()
-    # args = json.loads(args)
-    # args = dict2obj(args)
-    # checkpoint_path = "/home/ubuntu/chat_persona/generator/bart_train/saved_weights/checkpoint-epoch=03-val_loss=0.33.ckpt"
-    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # tokenizer = Tokenizer(args)
-    # model = FocusModel.load_from_checkpoint(checkpoint_path, args=args).eval().to(device)
-    # # data = pd.read_csv("/home/ubuntu/chat_persona/data/knowledge_retrieval/test_query_rewritten_1_1.csv")
+    # Generation Code
+    df = pd.read_csv("/work/kanakr/chat_persona/data/dataset/test_data.csv")
+    print("===================================================================================")
+    args = open('config.json').read()
+    args = json.loads(args)
+    args = dict2obj(args)
+    checkpoint_path = "/work/kanakr/chat_persona/generator/bart_train/saved_weights/checkpoint-epoch=04-val_loss=0.34.ckpt"
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    tokenizer = Tokenizer(args)
+    model = FocusModel.load_from_checkpoint(checkpoint_path, args=args).eval().to(device)
 
-    # outputs = []
-    # idx = 0
-    # for row in tqdm(list(merge_df.iterrows())):
-    #     idx+=1
+    outputs = []
+    idx = 0
+    for row in tqdm(list(df.iterrows())):
+        idx+=1
 
-    #     knowledge, question, persona, answer = row[1]['hit_knowledge_x'], row[1]['query_x'], row[1]['ground_persona'], row[1]['answer']
+        knowledge, question,  answer = row[1]['hit_knowledge'], row[1]['query'],  row[1]['answer']
         
-    #     history = None
-    #     history = ast.literal_eval(row[1]['dialog_history'])
-    #     if type(history) is not list or history is None or history == []:
-    #         history = " "
-    #     else:
-    #         history_size = min (args.history_size,  len(history)) 
-    #         history = history[-history_size:]
-    #         history = " ".join(history)
+        
+        if args.history_size:
+            history = ast.literal_eval(row[1]['dialog_history'])
             
-    #     persona = " ".join(ast.literal_eval(persona))
-    #     persona = " "
-    #     if persona is None:
-    #       persona = " "
-        
-    #     predictions = generate(model = model.generator, tokenizer = tokenizer, knowledge = knowledge, question = question, persona=persona, history =history, device=device)
-    #     outputs.append([row[1]['query_x'], row[1]['hit_knowledge_x'], predictions[0] if type(predictions) is list else predictions])
-        
-    #     if idx%52==0:
-    #         print("Query>>>>", question)
-    #         print("Knowledge>>>>", knowledge)
-    #         print("Ground>>>>", answer)
-    #         print("Prediction>>>>", predictions[0] if type(predictions) is list else predictions)
-    #         print("===============================================================")
-    #     # if idx >= 200:
-    #     #     break
+            if type(history) is not list or history is None or history == []:
+                history = " "
+            else:
+                history_size = min (args.history_size,  len(history)) 
+                history = history[-history_size:]
+                history = " ".join(history)
             
-    # outputs = pd.DataFrame(data=outputs, columns=['query', 'hit_knowledge', 'prediction'])
-    # outputs['answer'] = merge_df['answer']
-    # outputs.to_csv('./bart_predictions_exp_6_wo_persona.csv', index=False)
+        if args.use_persona:
+            persona = row[1]['ground_persona']
+            persona = " ".join(ast.literal_eval(persona))
+            if persona is None:
+                persona = " "
+        else:
+            persona = " "
+                        
+        predictions = generate(model = model.generator, tokenizer = tokenizer, knowledge = knowledge, question = question, persona=persona, history = history, device=device)
+        outputs.append([row[1]['query'], row[1]['hit_knowledge'], predictions[0] if type(predictions) is list else predictions])
+        
+        if idx%52==0:
+            print("Query>>>>", question)
+            print("Knowledge>>>>", knowledge)
+            print("Ground>>>>", answer)
+            print("Prediction>>>>", predictions[0] if type(predictions) is list else predictions)
+            print("===============================================================")
+        # if idx >= 200:
+        #     break
+            
+    outputs = pd.DataFrame(data=outputs, columns=['query', 'hit_knowledge', 'prediction'])
+    outputs['answer'] = df['answer']
+    outputs.to_csv('./bart_predictions_exp_0_wo_persona.csv', index=False)
     
-    df = pd.read_csv('/home/ubuntu/chat_persona/generator/bart_train/bart_predictions_exp_6_wo_persona.csv')
+    df = pd.read_csv('./bart_predictions_exp_0_wo_persona.csv')
     print(df.columns)
     
     ground = list(df['answer'])

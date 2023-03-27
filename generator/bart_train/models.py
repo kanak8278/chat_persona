@@ -2,6 +2,7 @@ import json
 import pandas as pd
 import numpy as np
 import torch
+from itertools import chain
 from pathlib import Path
 from torch.utils.data import DataLoader, Dataset, random_split
 import pytorch_lightning as pl
@@ -29,6 +30,7 @@ pl.seed_everything(42)
 
 class Tokenizer:
     def __init__(self, args):
+        self.args = args
         self.tokenizer = BartTokenizer.from_pretrained(args.model_generator)
         self.max_len_context = args.max_len_context
         self.max_len_answer = args.max_len_answer
@@ -55,55 +57,58 @@ class Tokenizer:
             return labels, batch_answer.attention_mask
 
         else:
-            if type(knowledge) is not list:
-                knowledge = [knowledge]
+            batch = {'knowledge': None,
+                     'persona': None,
+                     'history': None,
+                     'question': None}
+            
             if type(question) is not list:
                 question = [question]
-            if type(persona) is not list:
-                persona = [persona]
-           
-                
-            # add separate token to answers
-            knowledge = [self.task + ' ' + c for c in knowledge]
-            persona = [' ' + str(per) for per in persona]
 
             question = [' ' + str(ques) for ques in question]
-            
-            batch_knowledge = self.tokenizer(knowledge,
-                                             max_length=self.max_len_context,
-                                             padding='max_length',
-                                             truncation=True,
-                                             add_special_tokens=True)
-            
-                
-            batch_question = self.tokenizer(question,
+            batch['question'] = self.tokenizer(question,
                                             max_length=self.max_len_persona,
                                             padding='max_length',
                                             truncation=True,
                                             add_special_tokens=True)
-            batch_persona = self.tokenizer(persona,
+           
+            if self.args.use_persona:
+                if type(persona) is not list:
+                    persona = [persona]
+                persona = [' ' + str(per) for per in persona]
+                batch['persona'] = self.tokenizer(persona,
                                            max_length=self.max_len_question,
                                            padding='max_length',
                                            truncation=True,
                                            add_special_tokens=True)
             
-            if self.history_size is not None and history is not None:
+            if self.args.use_knowledge:
+                if type(knowledge) is not list:
+                    knowledge = [knowledge]
+                knowledge = [self.task + ' ' + c for c in knowledge] 
+                batch['knowledge'] = self.tokenizer(knowledge,
+                                             max_length=self.max_len_context,
+                                             padding='max_length',
+                                             truncation=True,
+                                             add_special_tokens=True)
                 
+                
+            if self.args.use_history:
                 if type(history) is not list:
                     history = [history]
-                
                 history = [' ' + str(his) for his in history]
-                # print("History is being used", history)   
-                batch_history = self.tokenizer(history,
+                batch['history'] = self.tokenizer(history,
                                                  max_length=self.max_len_history,
                                                  padding='max_length',
                                                  truncation=True,
                                                  add_special_tokens=True)
-                input_ids = torch.LongTensor([k[:-1] + p + h + q for (k, p, h, q) in zip(batch_knowledge.input_ids, batch_persona.input_ids, batch_history.input_ids, batch_question.input_ids)])
-                attention_mask = torch.FloatTensor([k[:-1] + p + h + q for (k, p, h, q) in zip(batch_knowledge.attention_mask, batch_persona.attention_mask, batch_history.input_ids, batch_question.attention_mask)])
-            else:
-                input_ids = torch.LongTensor([k[:-1] + p  + q for (k, p, q) in zip(batch_knowledge.input_ids, batch_persona.input_ids, batch_question.input_ids)])
-                attention_mask = torch.FloatTensor([k[:-1] + p +  q for (k, p, q) in zip(batch_knowledge.attention_mask, batch_persona.attention_mask, batch_question.attention_mask)])
+                
+            
+            input_ids = {key:batch[key].input_ids for key in batch.keys() if batch[key] is not None}
+            input_ids = torch.LongTensor([list(chain(*z)) for z in zip(*input_ids.values())])
+            
+            attention_mask = {key:batch[key].attention_mask for key in batch.keys() if batch[key] is not None}
+            attention_mask = torch.FloatTensor([list(chain(*z)) for z in zip(*attention_mask.values())])
             
             return input_ids, attention_mask
     
@@ -124,9 +129,13 @@ class FocusDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         raw = self.dataset.iloc[idx]
-        knowledge, question, answer,  = raw['hit_knowledge'], raw['query'], raw['answer']
+        knowledge, history, persona = None, None, None
+        question, answer  =  raw['query'], raw['answer']
         
-        if self.args.history_size > 0:
+        if self.args.use_knowledge:
+            knowledge = raw['hit_knowledge']   
+        
+        if self.args.use_history:
             history = ast.literal_eval(raw['dialog_history'])
             if type(history) is not list or history is None or history == []:
                 history = " "
@@ -134,15 +143,13 @@ class FocusDataset(Dataset):
                 history_size = min (self.args.history_size,  len(history)) 
                 history = history[-history_size:]
                 history = " ".join(history)
-        else:
-            history = None
+    
+        
         if self.args.use_persona:
             persona =  raw['ground_persona']        
             persona = " ".join(ast.literal_eval(persona))
             if persona is None:
                 persona = " "
-        else:
-            persona = " "
         return self.tokenizer(knowledge=knowledge, question=question, persona=persona, history = history), self.tokenizer(answer=answer)
 
 
@@ -300,7 +307,44 @@ class Evaluator:
         
 
 if __name__ == '__main__':
-    train_df = pd.read_csv("/home/ubuntu/chat_persona/data/question_rewritten/test_question_rewritten_hit_knowledge_1.csv")
+    train_df = pd.read_csv("/work/kanakr/chat_persona/data/dataset/train_data.csv")
+    # dataset = FocusDataset(args)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     # train_df = train_df.iloc[:100]    
     # persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts, history_token_counts = [], [], [], [], []
     

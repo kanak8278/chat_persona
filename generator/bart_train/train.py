@@ -20,22 +20,25 @@ if __name__ == '__main__':
     args = json.loads(args)
     args = dict2obj(args)
     
-    # tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
+    tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
     
-    #Debugging code
+    # """Debugging code"""
     # train_dataset = FocusDataset(args, train=True)
     # for idx, data in enumerate(train_dataset):
     #     (input_ids, attention_mask), (labels, decoder_attention_mask) = data
-    #     print(tokenizer.decode(input_ids[0], skip_special_tokens=True))
+    #     print([tokenizer.decode(input_id , skip_special_tokens=True) for input_id in input_ids])
     #     print()
     #     if idx >= 5:        
     #         break
-    
+
+
+
+    """Training Code Starts here"""    
     early_stop_callback = EarlyStopping(monitor='val_loss', patience=5, strict=False, verbose=True, mode='min')
     model_checkpoint_callback = ModelCheckpoint(monitor='val_loss', dirpath="./saved_weights", filename='checkpoint-{epoch:02d}-{val_loss:.2f}', save_top_k=2, mode='min')
     
     trainer_args = {
-        'accelerator': args.accelerator,
+       'accelerator': args.accelerator,
         'devices' : args.devices,
         'max_epochs' : args.max_epoch,
         'val_check_interval' : args.val_check_interval,
@@ -52,4 +55,4 @@ if __name__ == '__main__':
     if args.load_from_checkpoint:
         model.load_from_checkpoint(checkpoint_path = args.checkpoint_path, args = args)
     dm = FocusDataModule(args)
-    trainer.fit(model, dm)
+    trainer.fit(model, dm) 

@@ -110,7 +110,7 @@ class Tokenizer:
             attention_mask = {key:batch[key].attention_mask for key in batch.keys() if batch[key] is not None}
             attention_mask = torch.FloatTensor([list(chain(*z)) for z in zip(*attention_mask.values())])
             
-            return input_ids, attention_mask
+            return input_ids, attention_mask, persona
     
        
 class FocusDataset(Dataset):
@@ -147,7 +147,8 @@ class FocusDataset(Dataset):
         
         if self.args.use_persona:
             persona =  raw['ground_persona']        
-            persona = " ".join(ast.literal_eval(persona))
+            persona = "</s>".join(ast.literal_eval(persona))
+            # print(persona)
             if persona is None:
                 persona = " "
         return self.tokenizer(knowledge=knowledge, question=question, persona=persona, history = history), self.tokenizer(answer=answer)
@@ -238,6 +239,9 @@ class FocusModel(pl.LightningModule):
     
     def compute_loss(self, batch, batch_idx):
         input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
+        persona_batch = batch[0][2][0]
+        # print("Persona Batch:", persona_batch)
+        
         decoder_input_ids, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
         out = self.generator(input_ids=input_ids, attention_mask=attention_mask, decoder_attention_mask=decoder_attention_mask, labels=decoder_input_ids)
         loss, logits = out.loss, out.logits
@@ -248,7 +252,11 @@ class FocusModel(pl.LightningModule):
         for i in range(batch_size):
             prediction = self.tokenizer.decode(prob[i, :, :].argmax(dim=-1).tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
             ground_truth = self.tokenizer.decode(decoder_input_ids[i, :].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
-            persona = self.tokenizer.decode(input_ids[i, self.args.max_len_context-2:self.args.max_len_context+64].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            if self.args.use_persona:
+                persona = persona_batch[i]
+            else:
+                persona = " "
+            # persona = self.tokenizer.decode(input_ids[i, self.args.max_len_context-2:self.args.max_len_context+64].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
             # print(persona)
             r = 1 - self.evaluator(prediction, ground_truth, persona)
             loss_tune[i] = r * self.cross_entropy_loss(logits[i], decoder_input_ids[i])
@@ -277,6 +285,7 @@ class Evaluator:
         self.args = args
         self.tokenizer = ElectraTokenizer.from_pretrained(args.model_evaluator)
         self.model = ElectraModel.from_pretrained(args.model_evaluator).eval().to(device)
+        
         if self.args.use_persona:
             self.alpha = 0.5
             self.beta = 0.20
@@ -297,7 +306,11 @@ class Evaluator:
             input_ids = self.tokenizer([sen1.lower(), sen2.lower(), persona.lower()], return_tensors='pt', truncation=True, padding=True).to(self.device)
             out = self.model(**input_ids)['last_hidden_state']
             sim = self.cos(out[0, 0, :], out[1, 0, :]).item()
-            persona_sim = self.cos(out[0, 0, :], out[2, 0, :]).item()
+            
+            persona_sim = 0
+            if self.args.use_persona:
+                persona_sim = self.cos(out[0, 0, :], out[2, 0, :]).item()
+                
             sen1_tokens = word_tokenize(sen1)
             sen2_tokens = word_tokenize(sen2)
             bleu = sentence_bleu([sen2_tokens], sen1_tokens)
@@ -308,7 +321,9 @@ class Evaluator:
 
 if __name__ == '__main__':
     train_df = pd.read_csv("/work/kanakr/chat_persona/data/dataset/train_data.csv")
+    print(train_df.columns)
     # dataset = FocusDataset(args)
+    
     
     
     

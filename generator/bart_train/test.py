@@ -35,7 +35,7 @@ def dict2obj(dict1):
     return json.loads(json.dumps(dict1), object_hook=obj)
 
 def generate(model, tokenizer, knowledge, question, persona, history, device):
-    input_ids, attention_mask = tokenizer(knowledge=knowledge, question=question, persona=persona, history=history)
+    input_ids, attention_mask, persona_batch = tokenizer(knowledge=knowledge, question=question, persona=persona, history=history)
     input_ids, attention_mask = input_ids.to(device), attention_mask.to(device)
     with torch.no_grad():
         predictions = model.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=5, max_length=100, early_stopping=True)
@@ -75,18 +75,24 @@ if __name__ == '__main__':
     #         print("===============================================================")
     #     if idx >= 500:
     #         break
-    
-    
 
     
 
-    # Generation Code
+    saved_file = "./bart_predictions_exp_4_all_persona.csv"
+
+    """Generation Code"""
     df = pd.read_csv("/work/kanakr/chat_persona/data/dataset/test_data.csv")
     print("===================================================================================")
     args = open('config.json').read()
     args = json.loads(args)
     args = dict2obj(args)
-    checkpoint_path = "/work/kanakr/chat_persona/generator/bart_train/saved_weights/checkpoint-epoch=04-val_loss=0.34.ckpt"
+    
+    print("Use Persona:", args.use_persona)
+    print("Use Knowledge:", args.use_knowledge)
+    print("Use History:", args.use_history)
+    
+        
+    checkpoint_path = "/work/kanakr/chat_persona/generator/bart_train/saved_weights/checkpoint-epoch=04-val_loss=0.372.ckpt"
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     tokenizer = Tokenizer(args)
     model = FocusModel.load_from_checkpoint(checkpoint_path, args=args).eval().to(device)
@@ -96,45 +102,48 @@ if __name__ == '__main__':
     for row in tqdm(list(df.iterrows())):
         idx+=1
 
-        knowledge, question,  answer = row[1]['hit_knowledge'], row[1]['query'],  row[1]['answer']
+        # knowledge, question,  answer = row[1]['hit_knowledge'], row[1]['query'],  row[1]['answer']
+        knowledge, history, persona = None, None, None
+        question, answer  =  row[1]['query'], row[1]['answer']
         
+        if args.use_knowledge:
+            knowledge = row[1]['hit_knowledge']   
         
-        if args.history_size:
+        if args.use_history:
             history = ast.literal_eval(row[1]['dialog_history'])
-            
             if type(history) is not list or history is None or history == []:
                 history = " "
             else:
                 history_size = min (args.history_size,  len(history)) 
                 history = history[-history_size:]
                 history = " ".join(history)
-            
+    
+        
         if args.use_persona:
-            persona = row[1]['ground_persona']
-            persona = " ".join(ast.literal_eval(persona))
+            persona =  row[1]['ground_persona']        
+            persona = "</s>".join(ast.literal_eval(persona))
             if persona is None:
                 persona = " "
-        else:
-            persona = " "
+        
                         
         predictions = generate(model = model.generator, tokenizer = tokenizer, knowledge = knowledge, question = question, persona=persona, history = history, device=device)
         outputs.append([row[1]['query'], row[1]['hit_knowledge'], predictions[0] if type(predictions) is list else predictions])
         
         if idx%52==0:
-            print("Query>>>>", question)
-            print("Knowledge>>>>", knowledge)
-            print("Ground>>>>", answer)
-            print("Prediction>>>>", predictions[0] if type(predictions) is list else predictions)
+            print("Query>>>>>>>>", question)
+            print("Knowledge>>>>", row[1]['hit_knowledge'])
+            print("Persona>>>>>>", " ".join(ast.literal_eval(row[1]['ground_persona'])))
+            print("Ground>>>>>>>", answer)
+            print("Prediction>>>", predictions[0] if type(predictions) is list else predictions)
             print("===============================================================")
-        # if idx >= 200:
-        #     break
             
     outputs = pd.DataFrame(data=outputs, columns=['query', 'hit_knowledge', 'prediction'])
     outputs['answer'] = df['answer']
-    outputs.to_csv('./bart_predictions_exp_0_wo_persona.csv', index=False)
+    outputs.to_csv(saved_file, index=False)
     
-    df = pd.read_csv('./bart_predictions_exp_0_wo_persona.csv')
+    df = pd.read_csv(saved_file)
     print(df.columns)
+    df['prediction'] = df['prediction'].fillna(" ")
     
     ground = list(df['answer'])
     preds = list(df['prediction'])
@@ -150,19 +159,19 @@ if __name__ == '__main__':
     #     if idx >=50:
     #         break
     # nubia = Nubia()
+    # df['prediction'] = df['prediction'].fillna(" ")
     # for grd, pred in zip(ground, preds):
     #     print("Ground: ", grd)
     #     print("Pred: ", pred)
-    #     score = nubia.score(pred, grd, verbose=True, get_features=True)
-    #     print("Nubia Score: ", score)
+    #     score = bleu_score([pred], [grd])
+    #     print("Score: ", score)
     #     print("===============================================================")
-    #     break
     
     print("Metrics evaluation starting:")
     print("===================================================================================")
     
     print("Calculating Bleu Score")
-    bleu = bleu_score(preds, ground)
+    bleu = bleu_score(preds[:], ground[:])
     print("Bleu Score: ", bleu)
     print("===================================================================================")
     

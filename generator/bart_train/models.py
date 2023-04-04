@@ -2,6 +2,7 @@ import json
 import pandas as pd
 import numpy as np
 import torch
+from itertools import chain
 from pathlib import Path
 from torch.utils.data import DataLoader, Dataset, random_split
 import pytorch_lightning as pl
@@ -21,7 +22,6 @@ from transformers import (
 )
 
 from tqdm.auto import tqdm
-import seaborn as sns
 import matplotlib.pyplot as plt 
 from matplotlib import rcParams, rc
 
@@ -30,12 +30,14 @@ pl.seed_everything(42)
 
 class Tokenizer:
     def __init__(self, args):
+        self.args = args
         self.tokenizer = BartTokenizer.from_pretrained(args.model_generator)
         self.max_len_context = args.max_len_context
         self.max_len_answer = args.max_len_answer
         self.max_len_question = args.max_len_question
         self.max_len_persona = args.max_len_persona
         self.max_len_history = args.max_len_history
+        self.history_size = args.history_size
         self.task = args.task
 
         
@@ -55,56 +57,60 @@ class Tokenizer:
             return labels, batch_answer.attention_mask
 
         else:
-            if type(knowledge) is not list:
-                knowledge = [knowledge]
+            batch = {'knowledge': None,
+                     'persona': None,
+                     'history': None,
+                     'question': None}
+            
             if type(question) is not list:
                 question = [question]
-            if type(persona) is not list:
-                persona = [persona]
-           
-                
-            # add separate token to answers
-            knowledge = [self.task + ' ' + c for c in knowledge]
-            persona = [' ' + str(per) for per in persona]
 
             question = [' ' + str(ques) for ques in question]
-            
-            batch_knowledge = self.tokenizer(knowledge,
-                                             max_length=self.max_len_context,
-                                             padding='max_length',
-                                             truncation=True,
-                                             add_special_tokens=True)
-            
-                
-            batch_question = self.tokenizer(question,
+            batch['question'] = self.tokenizer(question,
                                             max_length=self.max_len_persona,
                                             padding='max_length',
                                             truncation=True,
                                             add_special_tokens=True)
-            batch_persona = self.tokenizer(persona,
+           
+            if self.args.use_persona:
+                if type(persona) is not list:
+                    persona = [persona]
+                persona = [' ' + str(per) for per in persona]
+                batch['persona'] = self.tokenizer(persona,
                                            max_length=self.max_len_question,
                                            padding='max_length',
                                            truncation=True,
                                            add_special_tokens=True)
             
-            if self.max_len_history is not None and history is not None:
+            if self.args.use_knowledge:
+                if type(knowledge) is not list:
+                    knowledge = [knowledge]
+                knowledge = [self.task + ' ' + c for c in knowledge] 
+                batch['knowledge'] = self.tokenizer(knowledge,
+                                             max_length=self.max_len_context,
+                                             padding='max_length',
+                                             truncation=True,
+                                             add_special_tokens=True)
                 
+                
+            if self.args.use_history:
                 if type(history) is not list:
                     history = [history]
-                
-                history = [' ' + str(his) for his in history]   
-                batch_history = self.tokenizer(history,
+                history = [' ' + str(his) for his in history]
+                batch['history'] = self.tokenizer(history,
                                                  max_length=self.max_len_history,
                                                  padding='max_length',
                                                  truncation=True,
                                                  add_special_tokens=True)
-                input_ids = torch.LongTensor([k[:-1] + p + h + q for (k, p, h, q) in zip(batch_knowledge.input_ids, batch_persona.input_ids, batch_history.input_ids, batch_question.input_ids)])
-                attention_mask = torch.FloatTensor([k[:-1] + p + h + q for (k, p, h, q) in zip(batch_knowledge.attention_mask, batch_persona.attention_mask, batch_history.input_ids, batch_question.attention_mask)])
-            else:
-                input_ids = torch.LongTensor([k[:-1] + p  + q for (k, p, q) in zip(batch_knowledge.input_ids, batch_persona.input_ids, batch_question.input_ids)])
-                attention_mask = torch.FloatTensor([k[:-1] + p +  q for (k, p, q) in zip(batch_knowledge.attention_mask, batch_persona.attention_mask, batch_question.attention_mask)])
+                
             
-            return input_ids, attention_mask
+            input_ids = {key:batch[key].input_ids for key in batch.keys() if batch[key] is not None}
+            input_ids = torch.LongTensor([list(chain(*z)) for z in zip(*input_ids.values())])
+            
+            attention_mask = {key:batch[key].attention_mask for key in batch.keys() if batch[key] is not None}
+            attention_mask = torch.FloatTensor([list(chain(*z)) for z in zip(*attention_mask.values())])
+            
+            return input_ids, attention_mask, persona
     
        
 class FocusDataset(Dataset):
@@ -123,8 +129,13 @@ class FocusDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         raw = self.dataset.iloc[idx]
-        knowledge, question, answer, persona = raw['hit_knowledge'], raw['question_rewritten'], raw['answer'], raw['ground_persona']
-        if self.args.max_len_history > 0:
+        knowledge, history, persona = None, None, None
+        question, answer  =  raw['query'], raw['answer']
+        
+        if self.args.use_knowledge:
+            knowledge = raw['hit_knowledge']   
+        
+        if self.args.use_history:
             history = ast.literal_eval(raw['dialog_history'])
             if type(history) is not list or history is None or history == []:
                 history = " "
@@ -132,11 +143,14 @@ class FocusDataset(Dataset):
                 history_size = min (self.args.history_size,  len(history)) 
                 history = history[-history_size:]
                 history = " ".join(history)
-        else:
-            history = None        
-        persona = " ".join(ast.literal_eval(persona))
-        if persona is None:
-          persona = " "
+    
+        
+        if self.args.use_persona:
+            persona =  raw['ground_persona']        
+            persona = "</s>".join(ast.literal_eval(persona))
+            # print(persona)
+            if persona is None:
+                persona = " "
         return self.tokenizer(knowledge=knowledge, question=question, persona=persona, history = history), self.tokenizer(answer=answer)
 
 
@@ -173,85 +187,7 @@ class FocusDataModule(pl.LightningDataModule):
                           batch_size=self.batch_size,
                           shuffle=False)
 
-# class FocusModel(pl.LightningModule):
-#     def __init__(self, args):
-#         super().__init__()
-#         self.automatic_optimization = False
-#         self.args = args
-#         self.device_ = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-#         self.model = BartForConditionalGeneration.from_pretrained(args.model_generator)
-#         # self.tokenizer = BartTokenizer(args.model_generator)
-#         self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
-#         self.gamma = args.gamma
-#         self.lr = args.learning_rate
-#         self.automatic_optimization = False 
-    
-#     def configure_optimizers(self):
-#         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
-#         scheduler = {
-#             'scheduler' : torch.optim.lr_scheduler.StepLR(optimizer, self.args.lr_scheduler_step, gamma=self.args.lr_scheduler_factor),
-#             'interval' : 'step',
-#             'frequency' : 1,
-#             'strict' : True
-#         }
-#         return [optimizer], [scheduler]
-    
 
-#     def forward(self, input_ids, attention_mask, decoder_attention_mask, labels=None):
-#         output = self.model(input_ids=input_ids, attention_mask=attention_mask, decoder_attention_mask=decoder_attention_mask, labels=labels)
-#         # output = self.generator.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=5)
-#         return output.loss, output.logits
-    
-#     def training_step(self, batch, batch_idx):
-#         input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
-#         labels, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
-#         loss, outputs = self(input_ids= input_ids,
-#                 attention_mask=attention_mask,
-#                 decoder_attention_mask=decoder_attention_mask,
-#                 labels=labels)
-#         self.log('train_loss', loss, prog_bar=True, logger=True)
-#         return loss
-    
-#     def validation_step(self, batch, batch_idx):
-#         input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
-#         labels, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
-#         loss, outputs = self(input_ids= input_ids,
-#              attention_mask=attention_mask,
-#              decoder_attention_mask=decoder_attention_mask,
-#              labels=labels)
-#         # self.model.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=5, early_stopping=True, max_length=self.args.answer_max_length)
-#         self.log('val_loss', loss, prog_bar=True, logger=True)
-#         return loss
-    
-#     def validation_epoch_end(self, outputs):
-#         avg_loss = torch.stack(outputs).mean()
-#         self.log('ptl/val_loss', avg_loss)
-    
-#     # def compute_loss(self, batch, batch_idx):
-#     #     input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
-#     #     decoder_input_ids, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
-#     #     out = self.generator(input_ids=input_ids, attention_mask=attention_mask, decoder_attention_mask=decoder_attention_mask, labels=decoder_input_ids)
-#     #     loss, logits = out.loss, out.logits
-#     #     prob = torch.functional.softmax(logits, dim=-1)
-#     #     batch_size = input_ids.shape[0]
-#     #     loss_tune = torch.zeros(batch_size)
-        
-#     #     for i in range(batch_size):
-#     #         prediction = self.tokenizer.decode(prob[i, :, :].argmax(dim=-1).tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
-#     #         ground_truth = self.tokenizer.decode(decoder_input_ids[i, :].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
-#     #         persona = self.tokenizer.decode(input_ids[i, self.args.max_len_context-2:self.args.max_len_context+64].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
-#     #         # print(persona)
-#     #         r = 1 - self.evaluator(prediction, ground_truth, persona)
-#     #         loss_tune[i] = r * self.cross_entropy_loss(logits[i], decoder_input_ids[i])
-        
-#     #     loss_tune = loss_tune.mean()
-#     #     loss = loss * self.gamma + (1 - self.gamma) * loss_tune
-#     #     return loss
-    
-#     # def validation_step(self, batch, batch_idx):
-#     #     loss = self.compute_loss(batch, batch_idx)
-#     #     self.log('val_loss', loss, on_step=True)
-#     #     return loss
 class FocusModel(pl.LightningModule):
     def __init__(self, args):
         super().__init__()
@@ -303,6 +239,9 @@ class FocusModel(pl.LightningModule):
     
     def compute_loss(self, batch, batch_idx):
         input_ids, attention_mask = batch[0][0].squeeze(1), batch[0][1].squeeze(1)
+        persona_batch = batch[0][2][0]
+        # print("Persona Batch:", persona_batch)
+        
         decoder_input_ids, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
         out = self.generator(input_ids=input_ids, attention_mask=attention_mask, decoder_attention_mask=decoder_attention_mask, labels=decoder_input_ids)
         loss, logits = out.loss, out.logits
@@ -313,7 +252,11 @@ class FocusModel(pl.LightningModule):
         for i in range(batch_size):
             prediction = self.tokenizer.decode(prob[i, :, :].argmax(dim=-1).tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
             ground_truth = self.tokenizer.decode(decoder_input_ids[i, :].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
-            persona = self.tokenizer.decode(input_ids[i, self.args.max_len_context-2:self.args.max_len_context+64].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            if self.args.use_persona:
+                persona = persona_batch[i]
+            else:
+                persona = " "
+            # persona = self.tokenizer.decode(input_ids[i, self.args.max_len_context-2:self.args.max_len_context+64].tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=True)
             # print(persona)
             r = 1 - self.evaluator(prediction, ground_truth, persona)
             loss_tune[i] = r * self.cross_entropy_loss(logits[i], decoder_input_ids[i])
@@ -342,10 +285,16 @@ class Evaluator:
         self.args = args
         self.tokenizer = ElectraTokenizer.from_pretrained(args.model_evaluator)
         self.model = ElectraModel.from_pretrained(args.model_evaluator).eval().to(device)
-        self.alpha = 0.5
-        self.beta = 0.20
-        self.delta = 0.30
         
+        if self.args.use_persona:
+            self.alpha = 0.5
+            self.beta = 0.20
+            self.delta = 0.30
+        else:
+            self.alpha = 0.5
+            self.beta = 0.5
+            self.delta = 0.0
+            
         self.device = device
         self.cos = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
 
@@ -357,7 +306,11 @@ class Evaluator:
             input_ids = self.tokenizer([sen1.lower(), sen2.lower(), persona.lower()], return_tensors='pt', truncation=True, padding=True).to(self.device)
             out = self.model(**input_ids)['last_hidden_state']
             sim = self.cos(out[0, 0, :], out[1, 0, :]).item()
-            persona_sim = self.cos(out[0, 0, :], out[2, 0, :]).item()
+            
+            persona_sim = 0
+            if self.args.use_persona:
+                persona_sim = self.cos(out[0, 0, :], out[2, 0, :]).item()
+                
             sen1_tokens = word_tokenize(sen1)
             sen2_tokens = word_tokenize(sen2)
             bleu = sentence_bleu([sen2_tokens], sen1_tokens)
@@ -367,55 +320,94 @@ class Evaluator:
         
 
 if __name__ == '__main__':
-    train_df = pd.read_csv("/home/ubuntu/chat_persona/data/question_rewritten/test_question_rewritten_hit_knowledge_1.csv")
+    train_df = pd.read_csv("/work/kanakr/chat_persona/data/dataset/train_data.csv")
+    print(train_df.columns)
+    # dataset = FocusDataset(args)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     # train_df = train_df.iloc[:100]    
-    persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts, history_token_counts = [], [], [], [], []
+    # persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts, history_token_counts = [], [], [], [], []
     
-    tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
+    # tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
 
-    for _, row in train_df.iterrows():
-        persona = " ".join(ast.literal_eval(row['ground_persona']))
-        persona_token_count = len(tokenizer.encode(persona))
-        persona_token_counts.append(persona_token_count)
+    # for _, row in train_df.iterrows():
+    #     persona = " ".join(ast.literal_eval(row['ground_persona']))
+    #     persona_token_count = len(tokenizer.encode(persona))
+    #     persona_token_counts.append(persona_token_count)
         
-        knowledge_token_count = len(tokenizer.encode(row['ground_knowledge']))
-        knowledge_token_counts.append(knowledge_token_count)
+    #     knowledge_token_count = len(tokenizer.encode(row['ground_knowledge']))
+    #     knowledge_token_counts.append(knowledge_token_count)
         
-        question_token_count = len(tokenizer.encode(row['question_rewritten']))
-        question_token_counts.append(question_token_count)
+    #     question_token_count = len(tokenizer.encode(row['question_rewritten']))
+    #     question_token_counts.append(question_token_count)
         
-        answer_token_count = len(tokenizer.encode(row['answer']))
-        answer_token_counts.append(answer_token_count)
+    #     answer_token_count = len(tokenizer.encode(row['answer']))
+    #     answer_token_counts.append(answer_token_count)
         
         
-        history = ast.literal_eval(row['dialog_history'])
-        history_size = min (2*2,  len(history)) 
-        history = history[-history_size:]
-        history_token_count = len(tokenizer.encode(" ".join(history)))
-        history_token_counts.append(history_token_count)
+    #     history = ast.literal_eval(row['dialog_history'])
+    #     history_size = min (2*2,  len(history)) 
+    #     history = history[-history_size:]
+    #     history_token_count = len(tokenizer.encode(" ".join(history)))
+    #     history_token_counts.append(history_token_count)
 
-    fig, (ax1, ax2, ax3, ax4, ax5, ax6) = plt.subplots(1, 6, figsize=(30, 5))
-    sns.histplot(persona_token_counts, ax=ax1)
-    ax1.set_title('Persona')
+    # fig, (ax1, ax2, ax3, ax4, ax5, ax6) = plt.subplots(1, 6, figsize=(30, 5))
+    # sns.histplot(persona_token_counts, ax=ax1)
+    # ax1.set_title('Persona')
 
-    sns.histplot(knowledge_token_counts, ax=ax2)
-    ax2.set_title('Knowledge')
+    # sns.histplot(knowledge_token_counts, ax=ax2)
+    # ax2.set_title('Knowledge')
 
-    sns.histplot(question_token_counts, ax=ax3)
-    ax3.set_title('Question')
+    # sns.histplot(question_token_counts, ax=ax3)
+    # ax3.set_title('Question')
 
-    sns.histplot(answer_token_counts, ax=ax4)
-    ax4.set_title('Answer')
+    # sns.histplot(answer_token_counts, ax=ax4)
+    # ax4.set_title('Answer')
     
-    sns.histplot(history_token_counts, ax=ax5)
-    ax5.set_title('History')
+    # sns.histplot(history_token_counts, ax=ax5)
+    # ax5.set_title('History')
 
     
-    assert len(persona_token_counts) == len(knowledge_token_counts) == len(question_token_counts) == len(answer_token_counts) == len(history_token_counts)
-    zipped_list = zip(persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts, history_token_counts)
-    total_counts = [sum(item) for item in zipped_list]
-    sns.histplot(total_counts, ax=ax6)
-    ax6.set_title('Total')
+    # assert len(persona_token_counts) == len(knowledge_token_counts) == len(question_token_counts) == len(answer_token_counts) == len(history_token_counts)
+    # zipped_list = zip(persona_token_counts, knowledge_token_counts, question_token_counts, answer_token_counts, history_token_counts)
+    # total_counts = [sum(item) for item in zipped_list]
+    # sns.histplot(total_counts, ax=ax6)
+    # ax6.set_title('Total')
     
-    plt.savefig('token_counts.png')
+    # plt.savefig('token_counts.png')
         

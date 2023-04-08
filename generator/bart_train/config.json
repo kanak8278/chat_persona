@@ -1,5 +1,5 @@
 {
-    "batch_size" : 24,
+    "batch_size" : 4,
     "max_epoch" : 5,
     "model_generator" : "facebook/bart-base",
     "model_evaluator" : "google/electra-base-discriminator",

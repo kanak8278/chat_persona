@@ -16,9 +16,13 @@ from transformers import AutoTokenizer, AutoModelForMultipleChoice, TrainingArgu
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase, PaddingStrategy
 
 
-model_checkpoint = "google/electra-base-discriminator"
+model_checkpoint = "kanak8278/xlnet-base-cased-finetuned_focus_swag_single_persona"
 batch_size = 4
 dataset = load_dataset("kanak8278/focus_persona_selection")
+
+# from transformers import AutoTokenizer, AutoModelForMultipleChoice
+# tokenizer = AutoTokenizer.from_pretrained("kanak8278/xlnet-base-cased-finetuned_focus_swag_single_persona")
+# model = AutoModelForMultipleChoice.from_pretrained("kanak8278/xlnet-base-cased-finetuned_focus_swag_single_persona")
 
 tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 model = AutoModelForMultipleChoice.from_pretrained(model_checkpoint, num_labels=1)
@@ -89,14 +93,14 @@ if __name__ == "__main__":
     args = TrainingArguments(
         f"{model_name}-finetuned_focus_swag_single_persona",
         evaluation_strategy=IntervalStrategy.STEPS,
-        eval_steps=800, # Evaluate every half epoch
+        eval_steps=300, # Evaluate every half epoch
         # evaluation_strategy = IntervalStrategy(),
         learning_rate=5e-7,
-        per_device_train_batch_size=4,
+        per_device_train_batch_size=2,
         per_device_eval_batch_size=4,
         num_train_epochs=5,
         weight_decay=0.01,
-        gradient_accumulation_steps=16,
+        gradient_accumulation_steps=12,
         save_total_limit = 1,
         push_to_hub=True,
     )
@@ -110,6 +114,5 @@ if __name__ == "__main__":
         compute_metrics=compute_metrics,
     )
     
-    trainer.train()
     
 

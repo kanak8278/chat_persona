@@ -19,6 +19,8 @@ from transformers import (
     ElectraModel,
     BartForConditionalGeneration,
     BartConfig,
+    GPT2Tokenizer,
+    GPTNeoForCausalLM  
 )
 
 from tqdm.auto import tqdm
@@ -32,6 +34,12 @@ class Tokenizer:
     def __init__(self, args):
         self.args = args
         self.tokenizer = BartTokenizer.from_pretrained(args.model_generator)
+        # self.tokenizer = GPT2Tokenizer.from_pretrained(
+        #     "EleutherAI/gpt-neo-1.3B",    
+        #     bos_token='<|startoftext|>',
+        #     eos_token='<|endoftext|>',
+        #     pad_token='<|pad|>')
+        
         self.max_len_context = args.max_len_context
         self.max_len_answer = args.max_len_answer
         self.max_len_question = args.max_len_question
@@ -195,6 +203,14 @@ class FocusModel(pl.LightningModule):
         self.args = args
         self.device_ = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.evaluator = Evaluator(args, self.device_)
+        # self.generator = GPTNeoForCausalLM.from_pretrained("EleutherAI/gpt-neo-1.3B")
+        # self.tokenizer = GPT2Tokenizer.from_pretrained(
+        #     "EleutherAI/gpt-neo-1.3B",    
+        #     bos_token='<|startoftext|>',
+        #     eos_token='<|endoftext|>',
+        #     pad_token='<|pad|>')
+        # self.generator.resize_token_embeddings(len(self.tokenizer))
+        
         self.generator = BartForConditionalGeneration.from_pretrained(args.model_generator)
         self.tokenizer = BartTokenizer.from_pretrained(args.model_generator)
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
@@ -243,7 +259,9 @@ class FocusModel(pl.LightningModule):
         # print("Persona Batch:", persona_batch)
         
         decoder_input_ids, decoder_attention_mask = batch[1][0].squeeze(1), batch[1][1].squeeze(1)
-        out = self.generator(input_ids=input_ids, attention_mask=attention_mask, decoder_attention_mask=decoder_attention_mask, labels=decoder_input_ids)
+        out = self.generator(input_ids=input_ids, attention_mask=attention_mask, 
+                            #  decoder_attention_mask=decoder_attention_mask,
+                             labels=decoder_input_ids)
         loss, logits = out.loss, out.logits
         prob = torch.nn.functional.softmax(logits, dim=-1)
         batch_size = input_ids.shape[0]

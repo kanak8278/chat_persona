@@ -40,8 +40,8 @@ if __name__ == '__main__':
 
 
     """Training Code Starts here"""    
-    early_stop_callback = EarlyStopping(monitor='val_loss', patience=3, strict=False, min_delta=0.002 , verbose=True, mode='min')
-    model_checkpoint_callback = ModelCheckpoint(monitor='val_loss', dirpath="./saved_weights", filename='gptneo-checkpoint-{epoch:02d}-{val_loss:.3f}', save_top_k=2, mode='min')
+    early_stop_callback = EarlyStopping(monitor='val_loss', patience=3, strict=False, min_delta=0.001 , verbose=True, mode='min')
+    model_checkpoint_callback = ModelCheckpoint(monitor='val_loss', dirpath="./saved_weights", filename='bart_0_0_1-checkpoint-{epoch:02d}-{val_loss:.3f}', save_top_k=1, mode='min')
     
     trainer_args = {
        'accelerator': args.accelerator,

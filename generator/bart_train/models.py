@@ -305,9 +305,9 @@ class Evaluator:
         self.model = ElectraModel.from_pretrained(args.model_evaluator).eval().to(device)
         
         if self.args.use_persona:
-            self.alpha = 0.5
-            self.beta = 0.20
-            self.delta = 0.30
+            self.alpha = 0
+            self.beta = 0
+            self.delta = 1
         else:
             self.alpha = 0.5
             self.beta = 0.5

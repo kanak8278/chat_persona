@@ -1,5 +1,5 @@
 {
-    "batch_size" : 4,
+    "batch_size" : 6,
     "max_epoch" : 5,
     "model_generator" : "facebook/bart-base",
     "model_evaluator" : "google/electra-base-discriminator",
@@ -11,7 +11,7 @@
     "use_persona": true,
     "use_knowledge": true,
     "use_history": true,
-    "history_size" : 6,
+    "history_size" : 2,
     "train_dataset" : "/work/kanakr/chat_persona/data/dataset/train_data.csv",
     "val_dataset" : "/work/kanakr/chat_persona/data/dataset/val_data.csv",
     "num_workers" : 4,

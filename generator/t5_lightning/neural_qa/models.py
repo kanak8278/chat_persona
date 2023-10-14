@@ -169,7 +169,9 @@ class LitQGModel(pl.LightningModule):
             loss_tune[i] = r * self.cross_entropy_loss(logits[i], decoder_input_ids[i])
         
         loss_tune = loss_tune.mean()
+        # print("Loss:", loss, "LossTune:", loss_tune)
         loss = loss * self.gamma + (1 - self.gamma) * loss_tune
+        # print("Final Loss:", loss)
         return loss
     
     def validation_step(self, batch, batch_idx):
@@ -188,8 +190,8 @@ class Evaluator:
         self.tokenizer = ElectraTokenizer.from_pretrained(args.model_evaluator)
         self.model = ElectraModel.from_pretrained(args.model_evaluator).eval().to(device)
         self.alpha = 0.5
-        self.beta = 0.5
-        self.delta = 0.5
+        self.beta = 0.25
+        self.delta = 0.25
         
         self.device = device
         self.cos = nn.CosineSimilarity(dim=-1, eps=1e-6)
@@ -206,6 +208,8 @@ class Evaluator:
             sen1_tokens = word_tokenize(sen1)
             sen2_tokens = word_tokenize(sen2)
             bleu = sentence_bleu([sen2_tokens], sen1_tokens)
-            # print(f'BLEU: {bleu}, SIM: {sim}, PERSONA_SIM: {persona_sim}')
+            print(f'BLEU: {bleu}, SIM: {sim}, PERSONA_SIM: {persona_sim}')
             reward = self.alpha * bleu + self.beta * sim + self.delta * persona_sim
-            return self.scale_reward(reward)
+            reward = self.scale_reward(reward)
+            print(f'Reward: {reward}')
+            return reward

@@ -8,6 +8,11 @@ from dataclasses import dataclass
 from typing import Optional, Union
 from tqdm import tqdm
 
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
+
+from torchmetrics.functional import bleu_score
+from torchmetrics.functional.text.rouge import rouge_score
+from torchmetrics.text.bert import BERTScore
 import torch
 import numpy as np # linear algebra
 import pandas as pd 
@@ -19,7 +24,15 @@ from tqdm import tqdm
 
 from transformers import AutoTokenizer, AutoModelForMultipleChoice
 
-
+def compute_metrics(preds, labels):
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='micro')
+    acc = accuracy_score(labels, preds)
+    return {
+        'accuracy': acc,
+        'f1': f1,
+        'precision': precision,
+        'recall': recall
+    }
 @dataclass
 class DataCollatorForMultipleChoice:
     """
@@ -75,9 +88,10 @@ def preprocess_function(examples, return_tensors=None):
 
 
 if __name__ == "__main__":
-  tokenizer = AutoTokenizer.from_pretrained("kanak8278/xlnet-base-cased-finetuned_focus_swag_single_persona-finetuned_focus_swag_single_persona")
-  model = AutoModelForMultipleChoice.from_pretrained("kanak8278/xlnet-base-cased-finetuned_focus_swag_single_persona-finetuned_focus_swag_single_persona")
-
+  tokenizer = AutoTokenizer.from_pretrained("/work/kanakr/chat_persona/xlnet-base-cased-focus_single_persona_weighted_entropy")
+  model = AutoModelForMultipleChoice.from_pretrained("/work/kanakr/chat_persona/xlnet-base-cased-focus_single_persona_weighted_entropy")
+  model = model.cuda()
+  model.eval()
   persona_candidate_columns = ["persona1", "persona2", "persona3", "persona4", "persona5", "persona6"] #persona6 for none of these 
   dataset = load_dataset("kanak8278/focus_persona_selection")
 
@@ -112,6 +126,37 @@ if __name__ == "__main__":
     results.append(result)
 
   result_df = pd.DataFrame(results)
-  # pred_value_counts = result_df['pred_class'].value_counts()
-  # label_value_counts = result_df['label'].value_counts()
-  result_df.to_csv("test_persona_results.csv", index=False)
+  
+  result_df.to_csv("test_persona_results_2.csv", index=False)
+  
+  df = pd.read_csv("/work/kanakr/chat_persona/test_persona_results_2.csv")
+  print(df.columns)
+  preds = list(df['pred_class'])
+  ground = list(df['label'])
+  
+  # {'accuracy': 0.777302174919019, 'f1': 0.777302174919019, 'precision': 0.777302174919019, 'recall': 0.777302174919019}
+  # {'accuracy': 0.7341508560851457, 'f1': 0.7341508560851457, 'precision': 0.7341508560851457, 'recall': 0.7341508560851457}
+  
+
+  """Metrics Calculation"""
+  print(compute_metrics(preds, ground))
+  
+  # print("Metrics evaluation starting:")
+  # print("===================================================================================")
+  
+  # print("Calculating Bleu Score")
+  # bleu = bleu_score(preds[:], ground[:])
+  # print("Bleu Score: ", bleu)
+  # print("===================================================================================")
+  
+  # print("Calculating Rouge Score")
+  # rouge = rouge_score(preds[:], ground[:])
+  # print("Rouge Score: ", rouge)
+  # print("===================================================================================")
+  
+  # bertscore = BERTScore('bert-base-uncased')
+  # print("Calculating BERT Score")
+  # bert = bertscore(preds[:], ground[:])
+  # bert = {k: sum(vv)/len(vv) for k, vv in bert.items()}
+  # print("BERT Score: ", bert)
+  # print("===================================================================================")

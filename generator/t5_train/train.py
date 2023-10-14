@@ -6,6 +6,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
 import wandb
 import ast
+import os
 
 from utils import DialogDataset, train, validate
 
@@ -13,7 +14,7 @@ from utils import DialogDataset, train, validate
 
 args = {
     # Initialize config
-    "TRAIN_BATCH_SIZE" : 8,    # input batch size for training (default: 64)
+    "TRAIN_BATCH_SIZE" : 2,    # input batch size for training (default: 64)
     "VALID_BATCH_SIZE" : 16,    # input batch size for testing (default: 1000)
     "TRAIN_EPOCHS" : 2,        # number of epochs to train (default: 10)
     "VAL_EPOCHS" : 1, 
@@ -107,20 +108,20 @@ if __name__ == "__main__":
     print("Train Mini-Batch: ", len(train_dataloader), "Val Mini-Batch: ", len(val_dataloader), "Test Mini-Batch: ", len(test_dataloader))
     
     # Define the optimizer and scheduler
-    optimizer = torch.optim.AdamW(params =  model.parameters(), lr=args["LEARNING_RATE"])
-    # scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=0.01, last_epoch=-1)
+    # optimizer = torch.optim.AdamW(params =  model.parameters(), lr=args["LEARNING_RATE"])
+    # # scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=0.01, last_epoch=-1)
     
-    # wandb.watch(model, log="all")
-    print("Starting Training!")
-    train(model, dataloaders, optimizer, scheduler, args["TRAIN_EPOCHS"], args["MODEL_SAVE_DIR"], save_best=True)
-    print()
+    # # wandb.watch(model, log="all")
+    # print("Starting Training!")
+    # train(model, dataloaders, optimizer, scheduler, args["TRAIN_EPOCHS"], args["MODEL_SAVE_DIR"], save_best=True)
+    # print() origin/remotes/origin/t5_lightning
     
     print("Loading inference model")
-    inference_model = T5ForConditionalGeneration.from_pretrained(config.MODEL_SAVE_DIR)
+    inference_model = T5ForConditionalGeneration.from_pretrained("/home/ubuntu/chat_persona/generator/t5_train/t5_weights")
     print("Inference Model Ready")
     predictions, actuals = validate(tokenizer, inference_model, test_dataloader)
     print("Predictions Ready!")
     final_df = pd.DataFrame({'Generated Text':predictions,'Actual Text':actuals})
-    final_df.to_csv(f'{config.MODEL_SAVE_DIR}/t5_predictions.csv', index=False)
-    print('Output Files generated for review')-
+    final_df.to_csv(f'{args["MODEL_SAVE_DIR"]}/t5_predictions.csv', index=False)
+    print('Output Files generated for review')
